@@ -5,6 +5,27 @@ import { z } from "zod";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const MCP_PATH = "/mcp";
+const MEMORY_URL = process.env.SUPABASE_MEMORY_URL;
+const MEMORY_API_KEY = process.env.SUPABASE_MEMORY_API_KEY;
+
+async function memoryRequest(payload) {
+  if (!MEMORY_URL || !MEMORY_API_KEY) {
+    throw new Error("Persistent memory is not configured");
+  }
+  const response = await fetch(MEMORY_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-ai-lawyer-key": MEMORY_API_KEY,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || `Memory API failed with HTTP ${response.status}`);
+  }
+  return data;
+}
 
 const textResult = (message, data = {}) => ({
   content: [{ type: "text", text: message }],
@@ -14,7 +35,7 @@ const textResult = (message, data = {}) => ({
 function createLegalServer() {
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
-    version: "0.3.0",
+    version: "0.4.0",
   });
 
   server.registerTool(
@@ -123,45 +144,171 @@ function createLegalServer() {
   );
 
   server.registerTool(
+    "case_memory_create",
+    {
+      title: "Создать память дела",
+      description:
+        "Создает постоянную карточку юридического дела в защищенной базе. Используй, когда пользователь начинает отдельное продолжающееся дело и контекст нужно сохранять между сообщениями.",
+      inputSchema: {
+        title: z.string().min(2),
+        objective: z.string().min(3),
+        stage: z.string().optional(),
+        summary: z.string().optional(),
+        next_step: z.string().optional(),
+      },
+    },
+    async ({ title, objective, stage, summary, next_step }) => {
+      try {
+        const data = await memoryRequest({
+          action: "create_case",
+          title, objective, stage, summary, next_step, jurisdiction: "KZ",
+        });
+        return textResult("Постоянная карточка дела создана.", data);
+      } catch (error) {
+        return textResult("Не удалось создать постоянную память дела.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_list",
+    {
+      title: "Найти сохраненное дело",
+      description:
+        "Возвращает список последних сохраненных юридических дел пользователя. Используй, когда нужно продолжить ранее начатое дело и case_id неизвестен.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async ({ limit = 20 }) => {
+      try {
+        const data = await memoryRequest({ action: "list_cases", limit });
+        return textResult("Сохраненные дела получены.", data);
+      } catch (error) {
+        return textResult("Не удалось получить список дел.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_get",
+    {
+      title: "Загрузить память дела",
+      description:
+        "Загружает полную постоянную карточку дела: сводку, факты, версии, события, документы и историю обновлений. Используй перед продолжением ранее начатого сложного дела.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+      },
+    },
+    async ({ case_id }) => {
+      try {
+        const data = await memoryRequest({ action: "get_case", case_id });
+        return textResult("Память дела загружена.", data);
+      } catch (error) {
+        return textResult("Не удалось загрузить память дела.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
     "case_memory_update",
     {
       title: "Обновить память юридического дела",
       description:
-        "Преобразует новую информацию по делу в структурированную память: подтвержденные факты, утверждения сторон, гипотезы, хронология, суммы, документы, противоречия, пробелы, сроки, стратегия и следующий шаг. Используй после существенного нового документа, ответа органа, показаний или изменения позиции.",
+        "Сохраняет новое существенное обстоятельство, документ, ответ органа или изменение позиции в постоянной истории дела. Не перезаписывает старую версию молча.",
       inputSchema: {
-        new_information: z.string().min(10).describe("Новая информация, документ или обстоятельство"),
-        current_goal: z.string().min(3).describe("Текущая цель пользователя по делу"),
-        prior_summary: z.string().optional().describe("Имеющаяся краткая память/сводка дела"),
-        case_id: z.string().optional().describe("Идентификатор дела, если уже есть"),
+        case_id: z.string().uuid(),
+        content: z.string().min(5).describe("Что нового произошло или установлено"),
+        update_type: z.string().optional().describe("fact/document/response/strategy/note"),
+        source_ref: z.string().optional().describe("Источник или название документа"),
+        summary: z.string().optional().describe("Новая актуальная краткая сводка дела"),
+        current_strategy: z.string().optional(),
+        next_step: z.string().optional(),
       },
     },
-    async ({ new_information, current_goal, prior_summary, case_id }) => {
-      const data = {
-        case_id: case_id || null,
-        current_goal,
-        prior_summary: prior_summary || null,
-        new_information,
-        memory_schema: {
-          confirmed_facts: "Только то, что подтверждено документом, записью, ответом органа или иным доказательством.",
-          party_claims: "Что утверждает каждая сторона, отдельно от доказанных фактов.",
-          hypotheses: "Рабочие версии, которые нельзя выдавать за установленный факт.",
-          chronology: "Юридически значимые события по датам.",
-          amounts: "Суммы, платежи, расчеты и расхождения.",
-          documents: "Документы, их дата, автор, реквизиты и доказательственное значение.",
-          contradictions: "Несостыковки между документами, датами, суммами, версиями и поведением сторон.",
-          missing_evidence: "Чего не хватает и каким запросом/ходатайством это получить.",
-          procedure: "Стадия, сроки, компетентный орган/суд и уже совершенные действия.",
-          strategy: "Основная позиция, резервная позиция и риски.",
-          next_step: "Один наиболее практичный следующий шаг.",
-        },
-        rules: [
-          "не перезаписывать ранее установленный факт новой неподтвержденной версией",
-          "при конфликте новых и старых данных фиксировать противоречие",
-          "всегда помечать источник ключевого факта",
-          "не смешивать юридический вывод с фактическим обстоятельством",
-        ],
-      };
-      return textResult("Сформирована схема обновления памяти дела. Обнови карточку дела без потери ранее подтвержденных обстоятельств.", data);
+    async ({ case_id, content, update_type = "note", source_ref, summary, current_strategy, next_step }) => {
+      try {
+        const update = await memoryRequest({
+          action: "add_update",
+          case_id,
+          update_type,
+          content,
+          source_ref: source_ref || null,
+          delta: {},
+        });
+        let c = null;
+        if (summary !== undefined || current_strategy !== undefined || next_step !== undefined) {
+          c = await memoryRequest({
+            action: "update_case",
+            case_id,
+            ...(summary !== undefined ? { summary } : {}),
+            ...(current_strategy !== undefined ? { current_strategy } : {}),
+            ...(next_step !== undefined ? { next_step } : {}),
+          });
+        }
+        return textResult("Память дела обновлена без удаления предыдущей истории.", { update, case: c });
+      } catch (error) {
+        return textResult("Не удалось обновить постоянную память дела.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_add_fact",
+    {
+      title: "Сохранить факт или версию по делу",
+      description:
+        "Сохраняет отдельный подтвержденный факт, утверждение стороны, гипотезу, недостающее доказательство или риск с источником и уверенностью.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+        category: z.enum(["confirmed_fact","party_claim","hypothesis","missing_evidence","risk"]),
+        statement: z.string().min(3),
+        source_ref: z.string().optional(),
+        event_date: z.string().optional(),
+        confidence: z.number().int().min(0).max(100).optional(),
+      },
+    },
+    async ({ case_id, category, statement, source_ref, event_date, confidence }) => {
+      try {
+        const data = await memoryRequest({
+          action: "add_fact", case_id, category, statement,
+          source_ref: source_ref || null,
+          event_date: event_date || null,
+          confidence: confidence ?? null,
+        });
+        return textResult("Элемент дела сохранен в постоянной памяти.", data);
+      } catch (error) {
+        return textResult("Не удалось сохранить элемент дела.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_add_event",
+    {
+      title: "Добавить событие в хронологию",
+      description:
+        "Сохраняет юридически значимое событие в постоянной хронологии дела.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+        description: z.string().min(3),
+        event_date: z.string().optional(),
+        event_type: z.string().optional(),
+        source_ref: z.string().optional(),
+      },
+    },
+    async ({ case_id, description, event_date, event_type, source_ref }) => {
+      try {
+        const data = await memoryRequest({
+          action: "add_event", case_id, description,
+          event_date: event_date || null,
+          event_type: event_type || null,
+          source_ref: source_ref || null,
+        });
+        return textResult("Событие добавлено в хронологию дела.", data);
+      } catch (error) {
+        return textResult("Не удалось сохранить событие.", { error: String(error) });
+      }
     }
   );
 
@@ -379,7 +526,7 @@ const httpServer = createServer(async (req, res) => {
     res.end(JSON.stringify({
       ok: true,
       service: "AI Юрист Казахстан",
-      version: "0.3.0",
+      version: "0.4.0",
       mcp: MCP_PATH
     }));
     return;
