@@ -67,6 +67,13 @@ async function supabaseRest(path, { token, method = "GET", body, prefer } = {}) 
 }
 
 const firstRow = (data) => Array.isArray(data) ? data[0] ?? null : data ?? null;
+const CASE_PUBLIC_FIELDS = "id,title,objective,jurisdiction,stage,summary,current_strategy,next_step,status,metadata";
+const PARTY_PUBLIC_FIELDS = "name,role,organization,notes,metadata";
+const FACT_PUBLIC_FIELDS = "category,statement,source_ref,event_date,confidence,metadata";
+const EVENT_PUBLIC_FIELDS = "event_date,event_time,event_type,description,source_ref,metadata";
+const DEADLINE_PUBLIC_FIELDS = "id,title,due_at,deadline_type,legal_basis,source_ref,status,notes";
+const DOCUMENT_PUBLIC_FIELDS = "filename,document_type,document_date,source_party,summary,extracted_metadata";
+const UPDATE_PUBLIC_FIELDS = "update_type,content,delta,source_ref,created_at";
 
 async function authenticatedMemoryRequest(payload, authContext) {
   const token = authContext?.token;
@@ -77,7 +84,7 @@ async function authenticatedMemoryRequest(payload, authContext) {
   if (action === "list_cases") {
     const limit = Math.max(1, Math.min(Number(payload.limit || 20), 50));
     const data = await supabaseRest(
-      `cases?select=id,title,objective,stage,summary,current_strategy,next_step,status,updated_at&status=neq.deleted&order=updated_at.desc&limit=${limit}`,
+      `cases?select=${CASE_PUBLIC_FIELDS}&status=neq.deleted&order=updated_at.desc&limit=${limit}`,
       { token }
     );
     return { cases: data || [] };
@@ -93,7 +100,7 @@ async function authenticatedMemoryRequest(payload, authContext) {
   }
 
   if (action === "create_case") {
-    const data = await supabaseRest("cases?select=*", {
+    const data = await supabaseRest(`cases?select=${CASE_PUBLIC_FIELDS}`, {
       token,
       method: "POST",
       prefer: "return=representation",
@@ -115,16 +122,16 @@ async function authenticatedMemoryRequest(payload, authContext) {
 
   if (action === "get_case") {
     const id = encodeFilter(payload.case_id);
-    const cases = await supabaseRest(`cases?id=eq.${id}&status=neq.deleted&select=*`, { token });
+    const cases = await supabaseRest(`cases?id=eq.${id}&status=neq.deleted&select=${CASE_PUBLIC_FIELDS}`, { token });
     const c = firstRow(cases);
     if (!c) throw new Error("case not found");
     const [parties, facts, events, deadlines, documents, updates] = await Promise.all([
-      supabaseRest(`case_parties?case_id=eq.${id}&select=*&order=created_at.asc`, { token }),
-      supabaseRest(`case_facts?case_id=eq.${id}&select=*&order=created_at.asc`, { token }),
-      supabaseRest(`case_events?case_id=eq.${id}&select=*&order=event_date.asc.nullslast`, { token }),
-      supabaseRest(`case_deadlines?case_id=eq.${id}&select=*&order=due_at.asc.nullslast`, { token }),
-      supabaseRest(`case_documents?case_id=eq.${id}&select=*&order=created_at.asc`, { token }),
-      supabaseRest(`case_updates?case_id=eq.${id}&select=*&order=created_at.desc&limit=100`, { token }),
+      supabaseRest(`case_parties?case_id=eq.${id}&select=${PARTY_PUBLIC_FIELDS}&order=created_at.asc`, { token }),
+      supabaseRest(`case_facts?case_id=eq.${id}&select=${FACT_PUBLIC_FIELDS}&order=created_at.asc`, { token }),
+      supabaseRest(`case_events?case_id=eq.${id}&select=${EVENT_PUBLIC_FIELDS}&order=event_date.asc.nullslast`, { token }),
+      supabaseRest(`case_deadlines?case_id=eq.${id}&select=${DEADLINE_PUBLIC_FIELDS}&order=due_at.asc.nullslast`, { token }),
+      supabaseRest(`case_documents?case_id=eq.${id}&select=${DOCUMENT_PUBLIC_FIELDS}&order=created_at.asc`, { token }),
+      supabaseRest(`case_updates?case_id=eq.${id}&select=${UPDATE_PUBLIC_FIELDS}&order=created_at.desc&limit=100`, { token }),
     ]);
     return { case: c, parties: parties || [], facts: facts || [], events: events || [], deadlines: deadlines || [], documents: documents || [], updates: updates || [] };
   }
@@ -133,7 +140,7 @@ async function authenticatedMemoryRequest(payload, authContext) {
     const allowed = ["title","objective","stage","summary","current_strategy","next_step","status","metadata"];
     const patch = {};
     for (const key of allowed) if (key in payload) patch[key] = payload[key];
-    const data = await supabaseRest(`cases?id=eq.${encodeFilter(payload.case_id)}&select=*`, {
+    const data = await supabaseRest(`cases?id=eq.${encodeFilter(payload.case_id)}&select=${CASE_PUBLIC_FIELDS}`, {
       token, method: "PATCH", prefer: "return=representation", body: patch,
     });
     const row = firstRow(data);
@@ -189,7 +196,15 @@ async function authenticatedMemoryRequest(payload, authContext) {
 
   if (inserts[action]) {
     const [table, row, key] = inserts[action];
-    const data = await supabaseRest(`${table}?select=*`, {
+    const selectFields = {
+      case_parties: PARTY_PUBLIC_FIELDS,
+      case_deadlines: DEADLINE_PUBLIC_FIELDS,
+      case_facts: FACT_PUBLIC_FIELDS,
+      case_events: EVENT_PUBLIC_FIELDS,
+      case_documents: DOCUMENT_PUBLIC_FIELDS,
+      case_updates: UPDATE_PUBLIC_FIELDS,
+    }[table];
+    const data = await supabaseRest(`${table}?select=${selectFields}`, {
       token, method: "POST", prefer: "return=representation", body: row,
     });
     return { [key]: firstRow(data) };
@@ -200,7 +215,7 @@ async function authenticatedMemoryRequest(payload, authContext) {
     const patch = {};
     for (const key of allowed) if (key in payload) patch[key] = payload[key];
     const data = await supabaseRest(
-      `case_deadlines?id=eq.${encodeFilter(payload.deadline_id)}&case_id=eq.${caseId}&select=*`,
+      `case_deadlines?id=eq.${encodeFilter(payload.deadline_id)}&case_id=eq.${caseId}&select=${DEADLINE_PUBLIC_FIELDS}`,
       { token, method: "PATCH", prefer: "return=representation", body: patch }
     );
     const row = firstRow(data);
