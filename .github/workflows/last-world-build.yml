@@ -1,0 +1,58 @@
+name: Build LAST WORLD Core
+
+on:
+  push:
+    branches: [last-world-server]
+    paths:
+      - "last-world/chunks/**"
+      - ".github/workflows/last-world-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct secure source archive
+        shell: bash
+        run: |
+          cat last-world/chunks/*.txt | tr -d '\n\r' | base64 -d > /tmp/lastworld.zip
+          rm -rf /tmp/lastworld-src
+          mkdir -p /tmp/lastworld-src
+          unzip -q /tmp/lastworld.zip -d /tmp/lastworld-src
+          test -f /tmp/lastworld-src/plugin/build.gradle.kts
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.1.0"
+
+      - name: Build LastWorldCore
+        working-directory: /tmp/lastworld-src/plugin
+        run: gradle --no-daemon clean build
+
+      - name: Publish JAR to branch
+        shell: bash
+        run: |
+          mkdir -p last-world
+          cp /tmp/lastworld-src/plugin/build/libs/LastWorldCore-*.jar last-world/LastWorldCore.jar
+          git config user.name "LAST WORLD Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add last-world/LastWorldCore.jar
+          if git diff --cached --quiet; then
+            echo "JAR unchanged"
+          else
+            git commit -m "Build LastWorldCore public jar"
+            git push
+          fi
