@@ -1,7 +1,6 @@
 name: Temporary MCP debug
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -16,55 +15,39 @@ jobs:
         with:
           node-version: "20"
       - run: npm install
-      - name: Inspect production law tool and official endpoint
+      - name: Test official Kazakhstan sources
         shell: bash
         run: |
           cat > debug.mjs <<'EOF'
-          import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-          import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-
-          const endpoint = "https://ai-lawyer-kz-production.up.railway.app/mcp";
-          const official = "https://zan.gov.kz/api/documents/95109/rus?withHtml=true&page=1";
-
-          console.log("DIRECT_FETCH_START");
-          try {
-            const direct = await fetch(official, {
-              headers: {
-                "accept":"application/json,text/plain,*/*",
-                "user-agent":"AI-Lawyer-KZ-Debug/1.0"
-              },
-              signal: AbortSignal.timeout(20000)
-            });
-            const txt = await direct.text();
-            console.log(JSON.stringify({
-              status: direct.status,
-              ok: direct.ok,
-              contentType: direct.headers.get("content-type"),
-              length: txt.length,
-              prefix: txt.slice(0, 1000)
-            }, null, 2));
-          } catch (e) {
-            console.log(JSON.stringify({directFetchError:String(e)}, null, 2));
-          }
-          console.log("DIRECT_FETCH_END");
-
-          const client = new Client({name:"debug",version:"1.0.0"});
-          try {
-            await client.connect(new StreamableHTTPClientTransport(new URL(endpoint)));
-            const tools = await client.listTools();
-            console.log("TOOL_PRESENT", tools.tools.some(t => t.name === "kz_official_act_fetch"));
-            const r = await client.callTool({
-              name:"kz_official_act_fetch",
-              arguments:{document_id:"95109",language:"rus",page:1}
-            });
-            console.log("LAW_RESULT_START");
-            console.log(JSON.stringify(r,null,2));
-            console.log("LAW_RESULT_END");
-          } catch (e) {
-            console.log("MCP_CALL_ERROR", e?.stack || String(e));
-            process.exitCode=1;
-          } finally {
-            try { await client.close(); } catch {}
+          const urls = [
+            "https://old.adilet.zan.kz/rus/docs/K1500000377",
+            "https://www.adilet.zan.kz/rus/docs/K1500000377",
+            "https://adilet.zan.kz/rus/docs/K1500000377",
+            "https://zan.gov.kz/api/documents/95109/rus?withHtml=true&page=1"
+          ];
+          for (const url of urls) {
+            try {
+              const r = await fetch(url, {
+                redirect: "follow",
+                headers: {
+                  "accept":"text/html,application/json,text/plain,*/*",
+                  "user-agent":"Mozilla/5.0 (compatible; AI-Lawyer-KZ/0.7; +legal-research)"
+                },
+                signal: AbortSignal.timeout(20000)
+              });
+              const body = await r.text();
+              console.log("FETCH", JSON.stringify({
+                url,
+                finalUrl:r.url,
+                status:r.status,
+                ok:r.ok,
+                contentType:r.headers.get("content-type"),
+                length:body.length,
+                prefix:body.slice(0,500).replace(/\s+/g," ")
+              }));
+            } catch(e) {
+              console.log("FETCH", JSON.stringify({url,error:String(e),cause:e?.cause ? String(e.cause):null}));
+            }
           }
           EOF
           node debug.mjs
