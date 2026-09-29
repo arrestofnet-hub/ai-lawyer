@@ -725,7 +725,8 @@ const httpServer = createServer(async (req, res) => {
       ok: true,
       service: "AI Юрист Казахстан",
       version: "0.6.0",
-      mcp: MCP_PATH
+      mcp: MCP_PATH,
+      git_commit: process.env.RAILWAY_GIT_COMMIT_SHA || null
     }));
     return;
   }
@@ -740,7 +741,8 @@ const httpServer = createServer(async (req, res) => {
         version: "0.6.0",
         mcp: MCP_PATH,
         persistent_memory: "ok",
-        remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null
+        remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null,
+        git_commit: process.env.RAILWAY_GIT_COMMIT_SHA || null
       }));
     } catch (error) {
       res.writeHead(503, { "content-type": "application/json; charset=utf-8" });
