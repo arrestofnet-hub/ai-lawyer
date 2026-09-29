@@ -1,0 +1,37 @@
+name: Temporary MCP debug
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mcp-debug.yml"
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm init -y >/dev/null 2>&1 && npm install @modelcontextprotocol/sdk@^1.20.2 zod@^3.25.76
+      - name: Inspect production law tool result
+        shell: bash
+        run: |
+          cat > /tmp/debug.mjs <<'EOF'
+          import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+          import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+          const client = new Client({name:"debug",version:"1.0.0"});
+          try {
+            await client.connect(new StreamableHTTPClientTransport(new URL("https://ai-lawyer-kz-production.up.railway.app/mcp")));
+            const r = await client.callTool({
+              name:"kz_official_act_fetch",
+              arguments:{document_id:"95109",language:"rus",page:1}
+            });
+            console.log("LAW_RESULT_START");
+            console.log(JSON.stringify(r,null,2));
+            console.log("LAW_RESULT_END");
+          } finally {
+            try { await client.close(); } catch {}
+          }
+          EOF
+          node /tmp/debug.mjs
