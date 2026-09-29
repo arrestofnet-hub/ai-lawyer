@@ -1,0 +1,27 @@
+{
+  "name": "ai-lawyer-kz",
+  "version": "0.5.0",
+  "description": "AI-юрист по законодательству Республики Казахстан с постоянной памятью дела, анализом документов, проверкой противоречий и подготовкой проектов юридических документов.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "AI Юрист Казахстан",
+    "shortDescription": "Юридический анализ и ведение дел по праву РК",
+    "longDescription": "Ведет юридическое дело в контексте: сохраняет факты и хронологию, анализирует и сравнивает документы, ищет противоречия, строит стратегию и готовит проекты документов по законодательству Республики Казахстан.",
+    "developerName": "AI Lawyer KZ",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://ai-lawyer-kz-production.up.railway.app",
+    "privacyPolicyURL": "https://ai-lawyer-kz-production.up.railway.app/privacy",
+    "termsOfServiceURL": "https://ai-lawyer-kz-production.up.railway.app/terms",
+    "defaultPrompt": [
+      "Разбери мою юридическую ситуацию по законодательству Казахстана.",
+      "Продолжи сохраненное дело и покажи, что изменилось.",
+      "Проанализируй документ и найди противоречия.",
+      "Подготовь проект юридического документа по моему делу."
+    ]
+  }
+}
