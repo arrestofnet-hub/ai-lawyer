@@ -1,21 +1,63 @@
 # AI Юрист Казахстан
 
-MCP-плагин для ChatGPT и Codex, ориентированный на право Республики Казахстан.
+MCP-плагин для ChatGPT/Codex по законодательству Республики Казахстан.
 
-Первая версия предоставляет инструменты:
-- `legal_case_intake` — структурирование дела;
-- `kz_law_research` — задание на проверку актуальной нормы РК;
-- `case_strategy` — процессуальная стратегия;
-- `draft_legal_document` — подготовка юридического документа.
+## Что уже реализовано
 
-## Запуск
+Сервис построен как связка:
 
-```bash
-npm install
-npm start
+```
+ChatGPT / MCP client
+        ↓
+Railway MCP server
+        ↓
+Supabase persistent case memory
+        ↓
+официальные источники права РК
 ```
 
-MCP endpoint: `/mcp`  
-Healthcheck: `/health`
+Основные инструменты:
 
-Проект строится так, чтобы ChatGPT выполнял интеллектуальную часть, а MCP-сервер давал специализированные юридические инструменты, данные и рабочие процессы.
+- `legal_case_intake` — структурирование юридической ситуации;
+- `case_memory_create` / `case_memory_search` / `case_memory_get` — постоянная память дел;
+- `case_memory_update` — история существенных изменений;
+- `case_memory_add_fact` — факты, утверждения сторон, гипотезы, пробелы и риски;
+- `case_memory_add_event` — хронология;
+- `case_memory_add_document` — сведения и юридически значимая сводка документа;
+- `contradiction_audit` — поиск противоречий;
+- `second_lawyer_review` — независимая перепроверка позиции;
+- `analyze_legal_document` — разбор юридического документа;
+- `compare_case_documents` — сопоставление двух документов/версий;
+- `case_strategy` — стратегия по делу;
+- `kz_law_research` — правила правовой проверки;
+- `kz_official_act_fetch` — получение НПА из официального ЭКБ РК по идентификатору;
+- `draft_legal_document` — подготовка проекта юридического документа;
+- `case_memory_delete` — удаление сохранённого дела после явного подтверждения.
+
+## Принцип работы
+
+AI Юрист должен работать не как справочник, а как второй юрист по делу:
+
+1. отделять подтверждённые факты от утверждений и гипотез;
+2. удерживать хронологию, суммы, документы и позиции сторон;
+3. искать противоречия и недостающие первичные доказательства;
+4. проверять альтернативную версию другой стороны;
+5. перепроверять нормы по официальному источнику и юридически значимой дате;
+6. сохранять существенные изменения в карточке дела;
+7. давать конкретный следующий процессуальный шаг.
+
+## Развёртывание
+
+Production:
+
+- Health: `https://ai-lawyer-kz-production.up.railway.app/health`
+- Readiness + persistent memory check: `https://ai-lawyer-kz-production.up.railway.app/ready`
+- MCP: `https://ai-lawyer-kz-production.up.railway.app/mcp`
+- Privacy: `https://ai-lawyer-kz-production.up.railway.app/privacy`
+- Terms: `https://ai-lawyer-kz-production.up.railway.app/terms`
+
+## Контроль качества
+
+GitHub Actions smoke-test проверяет внешний production MCP: discovery инструментов, доступ к официальному источнику и реальный цикл записи/чтения постоянной памяти.
+
+Секреты не хранятся в репозитории. Railway получает их через environment variables.
