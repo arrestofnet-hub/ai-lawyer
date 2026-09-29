@@ -56,3 +56,5 @@ jobs:
             git commit -m "Build LastWorldCore public jar"
             git push
           fi
+
+# rebuild-trigger: all secure source chunks uploaded
