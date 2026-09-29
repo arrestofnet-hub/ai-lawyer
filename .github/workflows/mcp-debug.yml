@@ -1,6 +1,7 @@
 name: Temporary MCP debug
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -10,19 +11,48 @@ jobs:
   debug:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm init -y >/dev/null 2>&1 && npm install @modelcontextprotocol/sdk@^1.20.2 zod@^3.25.76
-      - name: Inspect production law tool result
+      - run: npm install
+      - name: Inspect production law tool and official endpoint
         shell: bash
         run: |
-          cat > /tmp/debug.mjs <<'EOF'
+          cat > debug.mjs <<'EOF'
           import { Client } from "@modelcontextprotocol/sdk/client/index.js";
           import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+          const endpoint = "https://ai-lawyer-kz-production.up.railway.app/mcp";
+          const official = "https://zan.gov.kz/api/documents/95109/rus?withHtml=true&page=1";
+
+          console.log("DIRECT_FETCH_START");
+          try {
+            const direct = await fetch(official, {
+              headers: {
+                "accept":"application/json,text/plain,*/*",
+                "user-agent":"AI-Lawyer-KZ-Debug/1.0"
+              },
+              signal: AbortSignal.timeout(20000)
+            });
+            const txt = await direct.text();
+            console.log(JSON.stringify({
+              status: direct.status,
+              ok: direct.ok,
+              contentType: direct.headers.get("content-type"),
+              length: txt.length,
+              prefix: txt.slice(0, 1000)
+            }, null, 2));
+          } catch (e) {
+            console.log(JSON.stringify({directFetchError:String(e)}, null, 2));
+          }
+          console.log("DIRECT_FETCH_END");
+
           const client = new Client({name:"debug",version:"1.0.0"});
           try {
-            await client.connect(new StreamableHTTPClientTransport(new URL("https://ai-lawyer-kz-production.up.railway.app/mcp")));
+            await client.connect(new StreamableHTTPClientTransport(new URL(endpoint)));
+            const tools = await client.listTools();
+            console.log("TOOL_PRESENT", tools.tools.some(t => t.name === "kz_official_act_fetch"));
             const r = await client.callTool({
               name:"kz_official_act_fetch",
               arguments:{document_id:"95109",language:"rus",page:1}
@@ -30,8 +60,11 @@ jobs:
             console.log("LAW_RESULT_START");
             console.log(JSON.stringify(r,null,2));
             console.log("LAW_RESULT_END");
+          } catch (e) {
+            console.log("MCP_CALL_ERROR", e?.stack || String(e));
+            process.exitCode=1;
           } finally {
             try { await client.close(); } catch {}
           }
           EOF
-          node /tmp/debug.mjs
+          node debug.mjs
