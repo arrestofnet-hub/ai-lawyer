@@ -13,6 +13,7 @@ const PUBLIC_OAUTH_ENABLED = process.env.MCP_PUBLIC_OAUTH_ENABLED === "true";
 const OAUTH_ISSUER_URL = process.env.OAUTH_ISSUER_URL || `${SUPABASE_URL}/auth/v1`;
 const MCP_RESOURCE_URL = (process.env.MCP_RESOURCE_URL || "https://ai-lawyer-kz-production.up.railway.app").replace(/\/$/, "");
 const MEMORY_OAUTH_SCOPES = ["email"];
+const OPENAI_APPS_CHALLENGE_TOKEN = process.env.OPENAI_APPS_CHALLENGE_TOKEN || "";
 
 async function memoryRequest(payload) {
   if (!MEMORY_URL || !MEMORY_API_KEY) {
@@ -251,7 +252,7 @@ async function fetchOfficialAct(documentId, language = "rus", page = 1) {
   const response = await fetch(url, {
     headers: {
       "accept": "application/json,text/plain,*/*",
-      "user-agent": "AI-Lawyer-KZ/0.6 (+legal-research)"
+      "user-agent": "AI-Lawyer-KZ/0.8 (+legal-research)"
     }
   });
   const raw = await response.text();
@@ -265,7 +266,6 @@ async function fetchOfficialAct(documentId, language = "rus", page = 1) {
     document_id: id,
     language: lang,
     page,
-    fetched_at: new Date().toISOString(),
     data
   };
 }
@@ -1075,6 +1075,17 @@ const httpServer = createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
 
+
+  if (req.method === "GET" && url.pathname === "/.well-known/openai-apps-challenge") {
+    if (!OPENAI_APPS_CHALLENGE_TOKEN) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Not configured");
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    res.end(OPENAI_APPS_CHALLENGE_TOKEN);
+    return;
+  }
 
   if (req.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" });
