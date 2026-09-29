@@ -35,7 +35,7 @@ const textResult = (message, data = {}) => ({
 function createLegalServer() {
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
-    version: "0.4.0",
+    version: "0.4.1",
   });
 
   server.registerTool(
@@ -526,9 +526,34 @@ const httpServer = createServer(async (req, res) => {
     res.end(JSON.stringify({
       ok: true,
       service: "AI Юрист Казахстан",
-      version: "0.4.0",
+      version: "0.4.1",
       mcp: MCP_PATH
     }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/ready") {
+    try {
+      const memory = await memoryRequest({ action: "list_cases", limit: 1 });
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({
+        ok: true,
+        service: "AI Юрист Казахстан",
+        version: "0.4.1",
+        mcp: MCP_PATH,
+        persistent_memory: "ok",
+        remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null
+      }));
+    } catch (error) {
+      res.writeHead(503, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({
+        ok: false,
+        service: "AI Юрист Казахстан",
+        version: "0.4.1",
+        persistent_memory: "error",
+        error: String(error)
+      }));
+    }
     return;
   }
 
