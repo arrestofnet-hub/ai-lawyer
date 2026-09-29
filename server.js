@@ -27,6 +27,57 @@ async function memoryRequest(payload) {
   return data;
 }
 
+
+async function runMemorySelfTest() {
+  try {
+    const listed = await memoryRequest({ action: "list_cases", limit: 50 });
+    let testCase = Array.isArray(listed?.cases)
+      ? listed.cases.find((c) => c?.title === "__system_e2e_test__")
+      : null;
+
+    if (!testCase) {
+      const created = await memoryRequest({
+        action: "create_case",
+        title: "__system_e2e_test__",
+        objective: "Verify persistent memory write/read path",
+        stage: "system",
+        summary: "Automated end-to-end memory test record",
+        next_step: "none",
+        jurisdiction: "KZ"
+      });
+      testCase = created?.case;
+      if (testCase?.id) {
+        await memoryRequest({
+          action: "update_case",
+          case_id: testCase.id,
+          status: "system",
+          summary: "Automated end-to-end memory test record"
+        });
+      }
+    }
+
+    if (!testCase?.id) throw new Error("Self-test case id missing");
+
+    const marker = `memory-self-test:${new Date().toISOString()}`;
+    await memoryRequest({
+      action: "add_update",
+      case_id: testCase.id,
+      update_type: "system_test",
+      content: marker,
+      source_ref: "railway-startup",
+      delta: { marker }
+    });
+
+    const loaded = await memoryRequest({ action: "get_case", case_id: testCase.id });
+    const ok = Array.isArray(loaded?.updates) && loaded.updates.some((u) => u?.content === marker);
+    if (!ok) throw new Error("Self-test write could not be read back");
+
+    console.log("Persistent memory self-test OK", testCase.id);
+  } catch (error) {
+    console.error("Persistent memory self-test FAILED", error);
+  }
+}
+
 const textResult = (message, data = {}) => ({
   content: [{ type: "text", text: message }],
   structuredContent: data,
@@ -35,7 +86,7 @@ const textResult = (message, data = {}) => ({
 function createLegalServer() {
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
-    version: "0.4.1",
+    version: "0.4.2",
   });
 
   server.registerTool(
@@ -526,7 +577,7 @@ const httpServer = createServer(async (req, res) => {
     res.end(JSON.stringify({
       ok: true,
       service: "AI Юрист Казахстан",
-      version: "0.4.1",
+      version: "0.4.2",
       mcp: MCP_PATH
     }));
     return;
@@ -539,7 +590,7 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify({
         ok: true,
         service: "AI Юрист Казахстан",
-        version: "0.4.1",
+        version: "0.4.2",
         mcp: MCP_PATH,
         persistent_memory: "ok",
         remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null
@@ -549,7 +600,7 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify({
         ok: false,
         service: "AI Юрист Казахстан",
-        version: "0.4.1",
+        version: "0.4.2",
         persistent_memory: "error",
         error: String(error)
       }));
@@ -599,4 +650,5 @@ const httpServer = createServer(async (req, res) => {
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`AI Юрист Казахстан MCP listening on port ${PORT}${MCP_PATH}`);
+  runMemorySelfTest();
 });
