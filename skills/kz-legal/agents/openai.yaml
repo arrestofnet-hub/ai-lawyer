@@ -1,0 +1,16 @@
+interface:
+  display_name: "AI Юрист Казахстан"
+  short_description: "Ведение юридических дел по праву РК"
+  default_prompt: "Разбери мою юридическую ситуацию по законодательству Казахстана и веди дело с сохранением контекста."
+policy:
+  products:
+    - CHAT
+    - CODEX
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "ai-lawyer-kz"
+      description: "Память дела, анализ документов, стратегия и подготовка юридических документов по праву РК"
+      transport: "streamable_http"
+      url: "https://ai-lawyer-kz-production.up.railway.app/mcp"
