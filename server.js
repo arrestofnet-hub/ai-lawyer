@@ -113,7 +113,7 @@ const textResult = (message, data = {}) => ({
 function createLegalServer() {
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
-    version: "0.6.0",
+    version: "0.7.0",
   });
 
   server.registerTool(
@@ -374,6 +374,104 @@ function createLegalServer() {
         return textResult("Память дела обновлена без удаления предыдущей истории.", { update, case: c });
       } catch (error) {
         return textResult("Не удалось обновить постоянную память дела.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_add_party",
+    {
+      title: "Сохранить участника дела",
+      description:
+        "Сохраняет участника дела и его процессуальную/фактическую роль. Используй для клиента, ответчика, истца, банка, МФО, нотариуса, ЧСИ, госоргана, представителя и иных значимых участников.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+        name: z.string().min(2),
+        role: z.string().optional(),
+        organization: z.string().optional(),
+        notes: z.string().optional(),
+      },
+    },
+    async ({ case_id, name, role, organization, notes }) => {
+      try {
+        const data = await memoryRequest({
+          action: "add_party", case_id, name,
+          role: role || null,
+          organization: organization || null,
+          notes: notes || null,
+          metadata: {},
+        });
+        return textResult("Участник сохранен в карточке дела.", data);
+      } catch (error) {
+        return textResult("Не удалось сохранить участника дела.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_add_deadline",
+    {
+      title: "Сохранить срок по делу",
+      description:
+        "Сохраняет процессуальный или практический срок с основанием и источником. Если срок не проверен по актуальной норме, пометь статусом uncertain и не выдавай его как достоверный.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+        title: z.string().min(3),
+        due_at: z.string().optional().describe("ISO дата/время, если установлено"),
+        deadline_type: z.string().optional(),
+        legal_basis: z.string().optional(),
+        source_ref: z.string().optional(),
+        status: z.enum(["open","completed","cancelled","uncertain"]).optional(),
+        notes: z.string().optional(),
+      },
+    },
+    async ({ case_id, title, due_at, deadline_type, legal_basis, source_ref, status = "open", notes }) => {
+      try {
+        const data = await memoryRequest({
+          action: "add_deadline", case_id, title,
+          due_at: due_at || null,
+          deadline_type: deadline_type || null,
+          legal_basis: legal_basis || null,
+          source_ref: source_ref || null,
+          status,
+          notes: notes || null,
+        });
+        return textResult("Срок сохранен в карточке дела.", data);
+      } catch (error) {
+        return textResult("Не удалось сохранить срок.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_update_deadline",
+    {
+      title: "Обновить срок по делу",
+      description:
+        "Обновляет ранее сохраненный срок: дату, статус, основание или примечание. Используй, когда срок уточнен, исполнен, отменен или оказался предварительным.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+        deadline_id: z.number().int().positive(),
+        title: z.string().optional(),
+        due_at: z.string().nullable().optional(),
+        deadline_type: z.string().optional(),
+        legal_basis: z.string().optional(),
+        source_ref: z.string().optional(),
+        status: z.enum(["open","completed","cancelled","uncertain"]).optional(),
+        notes: z.string().optional(),
+      },
+    },
+    async ({ case_id, deadline_id, ...patch }) => {
+      try {
+        const data = await memoryRequest({
+          action: "update_deadline",
+          case_id,
+          deadline_id,
+          ...patch,
+        });
+        return textResult("Срок обновлен.", data);
+      } catch (error) {
+        return textResult("Не удалось обновить срок.", { error: String(error) });
       }
     }
   );
@@ -709,7 +807,7 @@ const httpServer = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/privacy") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>AI Юрист Казахстан — Политика конфиденциальности</title></head><body style="font-family:system-ui;max-width:820px;margin:40px auto;padding:0 20px;line-height:1.55"><h1>Политика конфиденциальности</h1><p>AI Юрист Казахстан обрабатывает сведения, которые пользователь передает для юридического анализа: описание ситуации, данные карточки дела, хронологию, документы и связанные метаданные.</p><h2>Цель обработки</h2><p>Данные используются только для выполнения запрошенных юридических функций, сохранения контекста дела, подготовки анализа и документов, а также обеспечения работоспособности сервиса.</p><h2>Хранение</h2><p>Карточки дел и связанные структурированные данные могут храниться в защищенной базе Supabase. Серверная часть размещается на Railway. Сервис не должен публиковать пользовательские документы или данные открыто.</p><h2>Минимизация данных</h2><p>Сервис должен избегать возврата лишних персональных данных, технических секретов и внутренних идентификаторов. Пользователю рекомендуется не передавать данные, не относящиеся к юридической задаче.</p><h2>Удаление и исправление</h2><p>Функции удаления и управления данными будут предоставляться через интерфейс сервиса по мере публичного запуска. До публичного запуска сервис используется в тестовом режиме.</p><h2>Ограничение</h2><p>AI Юрист Казахстан не является государственным органом, судом, адвокатом или нотариусом и не заменяет индивидуальную профессиональную помощь в ситуациях, где она обязательна.</p><p>Версия политики: 29 сентября 2026.</p></body></html>`);
+    res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>AI Юрист Казахстан — Политика конфиденциальности</title></head><body style="font-family:system-ui;max-width:820px;margin:40px auto;padding:0 20px;line-height:1.55"><h1>Политика конфиденциальности</h1><p>AI Юрист Казахстан обрабатывает сведения, которые пользователь передает для юридического анализа: описание ситуации, данные карточки дела, хронологию, документы и связанные метаданные.</p><h2>Цель обработки</h2><p>Данные используются только для выполнения запрошенных юридических функций, сохранения контекста дела, подготовки анализа и документов, а также обеспечения работоспособности сервиса.</p><h2>Хранение</h2><p>Карточки дел и связанные структурированные данные могут храниться в защищенной базе Supabase. Серверная часть размещается на Railway. Сервис не должен публиковать пользовательские документы или данные открыто.</p><h2>Минимизация данных</h2><p>Сервис должен избегать возврата лишних персональных данных, технических секретов и внутренних идентификаторов. Пользователю рекомендуется не передавать данные, не относящиеся к юридической задаче.</p><h2>Удаление и исправление</h2><p>Пользователь может запросить удаление конкретного сохраненного дела. Удаление выполняется только после явного подтверждения и включает связанную структурированную память этого дела.</p><h2>Ограничение</h2><p>AI Юрист Казахстан не является государственным органом, судом, адвокатом или нотариусом и не заменяет индивидуальную профессиональную помощь в ситуациях, где она обязательна.</p><p>Версия политики: 29 сентября 2026.</p></body></html>`);
     return;
   }
 
@@ -724,7 +822,7 @@ const httpServer = createServer(async (req, res) => {
     res.end(JSON.stringify({
       ok: true,
       service: "AI Юрист Казахстан",
-      version: "0.6.0",
+      version: "0.7.0",
       mcp: MCP_PATH,
       git_commit: process.env.RAILWAY_GIT_COMMIT_SHA || null
     }));
@@ -738,7 +836,7 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify({
         ok: true,
         service: "AI Юрист Казахстан",
-        version: "0.6.0",
+        version: "0.7.0",
         mcp: MCP_PATH,
         persistent_memory: "ok",
         remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null,
@@ -749,7 +847,7 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify({
         ok: false,
         service: "AI Юрист Казахстан",
-        version: "0.6.0",
+        version: "0.7.0",
         persistent_memory: "error",
         error: String(error)
       }));
