@@ -1,0 +1,25 @@
+name: Static checks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check server syntax
+        run: node --check server.js
+      - name: Validate JSON manifests
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('plugin.json','utf8')); JSON.parse(require('fs').readFileSync('mcp.json','utf8')); console.log('manifests ok')"
+      - name: Check required publication files
+        run: |
+          test -f PRIVACY.md
+          test -f TERMS.md
+          test -f skills/kz-legal/SKILL.md
