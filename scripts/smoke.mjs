@@ -21,8 +21,11 @@ try {
     "case_memory_search",
     "case_memory_get",
     "case_memory_update",
+    "case_memory_add_party",
     "case_memory_add_fact",
     "case_memory_add_event",
+    "case_memory_add_deadline",
+    "case_memory_update_deadline",
     "case_memory_add_document",
     "kz_official_act_fetch",
     "analyze_legal_document",
@@ -30,7 +33,8 @@ try {
     "contradiction_audit",
     "second_lawyer_review",
     "case_strategy",
-    "draft_legal_document"
+    "draft_legal_document",
+    "case_memory_delete"
   ];
 
   const missing = required.filter((n) => !names.has(n));
@@ -82,6 +86,62 @@ try {
     throw new Error("Memory update failed: " + updated.structuredContent.error);
   }
 
+  const partyMarker = "Smoke Party " + Date.now();
+  const party = await client.callTool({
+    name: "case_memory_add_party",
+    arguments: { case_id: testCase.id, name: partyMarker, role: "system-test" }
+  });
+  if (party?.structuredContent?.error) throw new Error("Party save failed");
+
+  const deadlineMarker = "Smoke deadline " + Date.now();
+  const deadline = await client.callTool({
+    name: "case_memory_add_deadline",
+    arguments: {
+      case_id: testCase.id,
+      title: deadlineMarker,
+      status: "uncertain",
+      notes: "Automated smoke-test deadline"
+    }
+  });
+  const deadlineId = deadline?.structuredContent?.deadline?.id;
+  if (!deadlineId) throw new Error("Deadline save failed");
+
+  const deadlineUpdated = await client.callTool({
+    name: "case_memory_update_deadline",
+    arguments: {
+      case_id: testCase.id,
+      deadline_id: deadlineId,
+      status: "completed",
+      notes: "Automated smoke-test deadline completed"
+    }
+  });
+  if (deadlineUpdated?.structuredContent?.deadline?.status !== "completed") {
+    throw new Error("Deadline update failed");
+  }
+
+  const documentMarker = "smoke-document-" + Date.now() + ".txt";
+  const documentSaved = await client.callTool({
+    name: "case_memory_add_document",
+    arguments: {
+      case_id: testCase.id,
+      filename: documentMarker,
+      document_type: "system-test",
+      summary: "Automated document memory test " + marker
+    }
+  });
+  if (!documentSaved?.structuredContent?.document?.id) {
+    throw new Error("Document save failed");
+  }
+
+  const searched = await client.callTool({
+    name: "case_memory_search",
+    arguments: { query: partyMarker, limit: 10 }
+  });
+  const searchCases = searched?.structuredContent?.cases || [];
+  if (!searchCases.some((c) => c?.id === testCase.id)) {
+    throw new Error("Context search failed");
+  }
+
   const loaded = await client.callTool({
     name: "case_memory_get",
     arguments: { case_id: testCase.id }
@@ -90,6 +150,18 @@ try {
   const updates = loaded?.structuredContent?.updates || [];
   if (!updates.some((u) => u?.content === marker)) {
     throw new Error("Memory write/read roundtrip failed");
+  }
+  const parties = loaded?.structuredContent?.parties || [];
+  if (!parties.some((p) => p?.name === partyMarker)) {
+    throw new Error("Party readback failed");
+  }
+  const deadlines = loaded?.structuredContent?.deadlines || [];
+  if (!deadlines.some((d) => d?.id === deadlineId && d?.status === "completed")) {
+    throw new Error("Deadline readback failed");
+  }
+  const documents = loaded?.structuredContent?.documents || [];
+  if (!documents.some((d) => d?.filename === documentMarker)) {
+    throw new Error("Document readback failed");
   }
 
   console.log("SMOKE_OK");
