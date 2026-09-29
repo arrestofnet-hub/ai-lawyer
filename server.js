@@ -7,6 +7,12 @@ const PORT = Number(process.env.PORT ?? 8787);
 const MCP_PATH = "/mcp";
 const MEMORY_URL = process.env.SUPABASE_MEMORY_URL;
 const MEMORY_API_KEY = process.env.SUPABASE_MEMORY_API_KEY;
+const SUPABASE_URL = (process.env.SUPABASE_URL || "https://xfpjxnnuvxmescjbndxo.supabase.co").replace(/\/$/, "");
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+const PUBLIC_OAUTH_ENABLED = process.env.MCP_PUBLIC_OAUTH_ENABLED === "true";
+const OAUTH_ISSUER_URL = process.env.OAUTH_ISSUER_URL || `${SUPABASE_URL}/auth/v1`;
+const MCP_RESOURCE_URL = (process.env.MCP_RESOURCE_URL || "https://ai-lawyer-kz-production.up.railway.app").replace(/\/$/, "");
+const MEMORY_OAUTH_SCOPES = ["email"];
 
 async function memoryRequest(payload) {
   if (!MEMORY_URL || !MEMORY_API_KEY) {
@@ -25,6 +31,215 @@ async function memoryRequest(payload) {
     throw new Error(data?.error || `Memory API failed with HTTP ${response.status}`);
   }
   return data;
+}
+
+class AuthRequiredError extends Error {}
+
+const encodeFilter = (value) => encodeURIComponent(String(value));
+
+async function supabaseRest(path, { token, method = "GET", body, prefer } = {}) {
+  if (!SUPABASE_PUBLISHABLE_KEY) {
+    throw new Error("Supabase publishable key is not configured");
+  }
+  const headers = {
+    "apikey": SUPABASE_PUBLISHABLE_KEY,
+    "authorization": `Bearer ${token}`,
+    "accept": "application/json",
+  };
+  if (body !== undefined) headers["content-type"] = "application/json";
+  if (prefer) headers["prefer"] = prefer;
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method,
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  const raw = await response.text();
+  let data = null;
+  if (raw) {
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+  }
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error || `Supabase REST failed with HTTP ${response.status}`);
+  }
+  return data;
+}
+
+const firstRow = (data) => Array.isArray(data) ? data[0] ?? null : data ?? null;
+
+async function authenticatedMemoryRequest(payload, authContext) {
+  const token = authContext?.token;
+  const subject = authContext?.subject;
+  if (!token || !subject) throw new AuthRequiredError("Authentication required");
+
+  const action = payload?.action;
+  if (action === "list_cases") {
+    const limit = Math.max(1, Math.min(Number(payload.limit || 20), 50));
+    const data = await supabaseRest(
+      `cases?select=id,title,objective,stage,summary,current_strategy,next_step,status,updated_at&status=neq.deleted&order=updated_at.desc&limit=${limit}`,
+      { token }
+    );
+    return { cases: data || [] };
+  }
+
+  if (action === "search_cases") {
+    const data = await supabaseRest("rpc/search_ai_lawyer_cases_user", {
+      token,
+      method: "POST",
+      body: { p_query: String(payload.query || ""), p_limit: Math.max(1, Math.min(Number(payload.limit || 20), 50)) },
+    });
+    return { cases: data || [] };
+  }
+
+  if (action === "create_case") {
+    const data = await supabaseRest("cases?select=*", {
+      token,
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        owner_subject: subject,
+        title: payload.title,
+        objective: payload.objective ?? null,
+        jurisdiction: payload.jurisdiction ?? "KZ",
+        stage: payload.stage ?? null,
+        summary: payload.summary ?? null,
+        current_strategy: payload.current_strategy ?? null,
+        next_step: payload.next_step ?? null,
+        status: payload.status ?? "active",
+        metadata: payload.metadata ?? {},
+      },
+    });
+    return { case: firstRow(data) };
+  }
+
+  if (action === "get_case") {
+    const id = encodeFilter(payload.case_id);
+    const cases = await supabaseRest(`cases?id=eq.${id}&status=neq.deleted&select=*`, { token });
+    const c = firstRow(cases);
+    if (!c) throw new Error("case not found");
+    const [parties, facts, events, deadlines, documents, updates] = await Promise.all([
+      supabaseRest(`case_parties?case_id=eq.${id}&select=*&order=created_at.asc`, { token }),
+      supabaseRest(`case_facts?case_id=eq.${id}&select=*&order=created_at.asc`, { token }),
+      supabaseRest(`case_events?case_id=eq.${id}&select=*&order=event_date.asc.nullslast`, { token }),
+      supabaseRest(`case_deadlines?case_id=eq.${id}&select=*&order=due_at.asc.nullslast`, { token }),
+      supabaseRest(`case_documents?case_id=eq.${id}&select=*&order=created_at.asc`, { token }),
+      supabaseRest(`case_updates?case_id=eq.${id}&select=*&order=created_at.desc&limit=100`, { token }),
+    ]);
+    return { case: c, parties: parties || [], facts: facts || [], events: events || [], deadlines: deadlines || [], documents: documents || [], updates: updates || [] };
+  }
+
+  if (action === "update_case") {
+    const allowed = ["title","objective","stage","summary","current_strategy","next_step","status","metadata"];
+    const patch = {};
+    for (const key of allowed) if (key in payload) patch[key] = payload[key];
+    const data = await supabaseRest(`cases?id=eq.${encodeFilter(payload.case_id)}&select=*`, {
+      token, method: "PATCH", prefer: "return=representation", body: patch,
+    });
+    const row = firstRow(data);
+    if (!row) throw new Error("case not found");
+    return { case: row };
+  }
+
+  if (action === "delete_case") {
+    if (payload.confirm !== true) throw new Error("explicit confirmation required");
+    const data = await supabaseRest(`cases?id=eq.${encodeFilter(payload.case_id)}&select=id,title`, {
+      token, method: "DELETE", prefer: "return=representation",
+    });
+    const row = firstRow(data);
+    if (!row) throw new Error("case not found");
+    return { deleted: row };
+  }
+
+  const caseId = encodeFilter(payload.case_id);
+  const own = await supabaseRest(`cases?id=eq.${caseId}&status=neq.deleted&select=id&limit=1`, { token });
+  if (!firstRow(own)) throw new Error("case not found");
+
+  const inserts = {
+    add_party: ["case_parties", {
+      case_id: payload.case_id, name: payload.name, role: payload.role ?? null,
+      organization: payload.organization ?? null, notes: payload.notes ?? null, metadata: payload.metadata ?? {},
+    }, "party"],
+    add_deadline: ["case_deadlines", {
+      case_id: payload.case_id, title: payload.title, due_at: payload.due_at ?? null,
+      deadline_type: payload.deadline_type ?? null, legal_basis: payload.legal_basis ?? null,
+      source_ref: payload.source_ref ?? null, status: payload.status ?? "open", notes: payload.notes ?? null,
+    }, "deadline"],
+    add_fact: ["case_facts", {
+      case_id: payload.case_id, category: payload.category, statement: payload.statement,
+      source_ref: payload.source_ref ?? null, event_date: payload.event_date ?? null,
+      confidence: payload.confidence ?? null, metadata: payload.metadata ?? {},
+    }, "fact"],
+    add_event: ["case_events", {
+      case_id: payload.case_id, event_date: payload.event_date ?? null, event_time: payload.event_time ?? null,
+      event_type: payload.event_type ?? null, description: payload.description,
+      source_ref: payload.source_ref ?? null, metadata: payload.metadata ?? {},
+    }, "event"],
+    add_document: ["case_documents", {
+      case_id: payload.case_id, filename: payload.filename ?? null, document_type: payload.document_type ?? null,
+      document_date: payload.document_date ?? null, source_party: payload.source_party ?? null,
+      sha256: payload.sha256 ?? null, storage_path: payload.storage_path ?? null,
+      summary: payload.summary ?? null, extracted_metadata: payload.extracted_metadata ?? {},
+    }, "document"],
+    add_update: ["case_updates", {
+      case_id: payload.case_id, update_type: payload.update_type ?? "note", content: payload.content ?? null,
+      delta: payload.delta ?? {}, source_ref: payload.source_ref ?? null,
+    }, "update"],
+  };
+
+  if (inserts[action]) {
+    const [table, row, key] = inserts[action];
+    const data = await supabaseRest(`${table}?select=*`, {
+      token, method: "POST", prefer: "return=representation", body: row,
+    });
+    return { [key]: firstRow(data) };
+  }
+
+  if (action === "update_deadline") {
+    const allowed = ["title","due_at","deadline_type","legal_basis","source_ref","status","notes"];
+    const patch = {};
+    for (const key of allowed) if (key in payload) patch[key] = payload[key];
+    const data = await supabaseRest(
+      `case_deadlines?id=eq.${encodeFilter(payload.deadline_id)}&case_id=eq.${caseId}&select=*`,
+      { token, method: "PATCH", prefer: "return=representation", body: patch }
+    );
+    const row = firstRow(data);
+    if (!row) throw new Error("deadline not found");
+    return { deadline: row };
+  }
+
+  throw new Error("unknown action");
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function verifySupabaseUserToken(token) {
+  if (!token || !SUPABASE_PUBLISHABLE_KEY) return null;
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      "apikey": SUPABASE_PUBLISHABLE_KEY,
+      "authorization": `Bearer ${token}`,
+      "accept": "application/json",
+    },
+  });
+  if (!response.ok) return null;
+  const user = await response.json().catch(() => null);
+  if (!user?.id) return null;
+
+  const claims = decodeJwtPayload(token);
+  const now = Math.floor(Date.now() / 1000);
+  const aud = Array.isArray(claims?.aud) ? claims.aud : [claims?.aud].filter(Boolean);
+  if (!claims || claims.sub !== user.id || claims.iss !== OAUTH_ISSUER_URL || !aud.includes("authenticated") || Number(claims.exp || 0) <= now) {
+    return null;
+  }
+  return { token, subject: String(user.id), email: user.email || null, client_id: claims.client_id || null };
 }
 
 
@@ -110,7 +325,30 @@ const textResult = (message, data = {}) => ({
   structuredContent: data,
 });
 
-function createLegalServer() {
+const oauthChallenge = () =>
+  `Bearer resource_metadata="${MCP_RESOURCE_URL}/.well-known/oauth-protected-resource", error="insufficient_scope", error_description="Link your AI Lawyer account to use saved case memory"`;
+
+const authRequiredResult = () => ({
+  content: [{ type: "text", text: "Для сохраненной памяти дела нужно подключить аккаунт AI Юрист Казахстан." }],
+  structuredContent: { authentication_required: true },
+  _meta: { "mcp/www_authenticate": [oauthChallenge()] },
+  isError: true,
+});
+
+const memoryFailure = (error, message) =>
+  error instanceof AuthRequiredError
+    ? authRequiredResult()
+    : textResult(message, { error: String(error) });
+
+function createLegalServer(authContext = {}) {
+  const memory = (payload) => {
+    if (!PUBLIC_OAUTH_ENABLED) return memoryRequest(payload);
+    if (!authContext?.token || !authContext?.subject) throw new AuthRequiredError("Authentication required");
+    return authenticatedMemoryRequest(payload, authContext);
+  };
+  const memorySecuritySchemes = PUBLIC_OAUTH_ENABLED
+    ? [{ type: "oauth2", scopes: MEMORY_OAUTH_SCOPES }]
+    : [{ type: "noauth" }];
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
     version: "0.8.0",
@@ -255,7 +493,7 @@ function createLegalServer() {
     "case_memory_create",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
-      title: "Создать память дела",
+      securitySchemes: memorySecuritySchemes,\n      title: "Создать память дела",
       description:
         "Создает постоянную карточку юридического дела в защищенной базе. Используй, когда пользователь начинает отдельное продолжающееся дело и контекст нужно сохранять между сообщениями.",
       inputSchema: {
@@ -268,13 +506,13 @@ function createLegalServer() {
     },
     async ({ title, objective, stage, summary, next_step }) => {
       try {
-        const data = await memoryRequest({
+        const data = await memory({
           action: "create_case",
           title, objective, stage, summary, next_step, jurisdiction: "KZ",
         });
         return textResult("Постоянная карточка дела создана.", data);
       } catch (error) {
-        return textResult("Не удалось создать постоянную память дела.", { error: String(error) });
+        return memoryFailure(error, "Не удалось создать постоянную память дела.");
       }
     }
   );
@@ -283,7 +521,7 @@ function createLegalServer() {
     "case_memory_list",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
-      title: "Найти сохраненное дело",
+      securitySchemes: memorySecuritySchemes,\n      title: "Найти сохраненное дело",
       description:
         "Возвращает список последних сохраненных юридических дел пользователя. Используй, когда нужно продолжить ранее начатое дело и case_id неизвестен.",
       inputSchema: {
@@ -292,10 +530,10 @@ function createLegalServer() {
     },
     async ({ limit = 20 }) => {
       try {
-        const data = await memoryRequest({ action: "list_cases", limit });
+        const data = await memory({ action: "list_cases", limit });
         return textResult("Сохраненные дела получены.", data);
       } catch (error) {
-        return textResult("Не удалось получить список дел.", { error: String(error) });
+        return memoryFailure(error, "Не удалось получить список дел.");
       }
     }
   );
@@ -304,7 +542,7 @@ function createLegalServer() {
     "case_memory_search",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
-      title: "Поиск сохраненного дела",
+      securitySchemes: memorySecuritySchemes,\n      title: "Поиск сохраненного дела",
       description:
         "Ищет постоянные карточки дел по названию, цели или сводке. Используй короткую ключевую фразу пользователя, когда он говорит 'дело Цоя', 'по коллектору' и т.п.",
       inputSchema: {
@@ -314,10 +552,10 @@ function createLegalServer() {
     },
     async ({ query, limit = 20 }) => {
       try {
-        const data = await memoryRequest({ action: "search_cases", query, limit });
+        const data = await memory({ action: "search_cases", query, limit });
         return textResult("Поиск по сохраненным делам выполнен.", data);
       } catch (error) {
-        return textResult("Не удалось выполнить поиск по памяти дел.", { error: String(error) });
+        return memoryFailure(error, "Не удалось выполнить поиск по памяти дел.");
       }
     }
   );
@@ -326,7 +564,7 @@ function createLegalServer() {
     "case_memory_get",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
-      title: "Загрузить память дела",
+      securitySchemes: memorySecuritySchemes,\n      title: "Загрузить память дела",
       description:
         "Загружает полную постоянную карточку дела: сводку, факты, версии, события, документы и историю обновлений. Используй перед продолжением ранее начатого сложного дела.",
       inputSchema: {
@@ -335,10 +573,10 @@ function createLegalServer() {
     },
     async ({ case_id }) => {
       try {
-        const data = await memoryRequest({ action: "get_case", case_id });
+        const data = await memory({ action: "get_case", case_id });
         return textResult("Память дела загружена.", data);
       } catch (error) {
-        return textResult("Не удалось загрузить память дела.", { error: String(error) });
+        return memoryFailure(error, "Не удалось загрузить память дела.");
       }
     }
   );
@@ -347,7 +585,7 @@ function createLegalServer() {
     "case_memory_update",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
-      title: "Обновить память юридического дела",
+      securitySchemes: memorySecuritySchemes,\n      title: "Обновить память юридического дела",
       description:
         "Сохраняет новое существенное обстоятельство, документ, ответ органа или изменение позиции в постоянной истории дела. Не перезаписывает старую версию молча.",
       inputSchema: {
@@ -362,7 +600,7 @@ function createLegalServer() {
     },
     async ({ case_id, content, update_type = "note", source_ref, summary, current_strategy, next_step }) => {
       try {
-        const update = await memoryRequest({
+        const update = await memory({
           action: "add_update",
           case_id,
           update_type,
@@ -372,7 +610,7 @@ function createLegalServer() {
         });
         let c = null;
         if (summary !== undefined || current_strategy !== undefined || next_step !== undefined) {
-          c = await memoryRequest({
+          c = await memory({
             action: "update_case",
             case_id,
             ...(summary !== undefined ? { summary } : {}),
@@ -382,7 +620,7 @@ function createLegalServer() {
         }
         return textResult("Память дела обновлена без удаления предыдущей истории.", { update, case: c });
       } catch (error) {
-        return textResult("Не удалось обновить постоянную память дела.", { error: String(error) });
+        return memoryFailure(error, "Не удалось обновить постоянную память дела.");
       }
     }
   );
@@ -391,7 +629,7 @@ function createLegalServer() {
     "case_memory_add_party",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
-      title: "Сохранить участника дела",
+      securitySchemes: memorySecuritySchemes,\n      title: "Сохранить участника дела",
       description:
         "Сохраняет участника дела и его процессуальную/фактическую роль. Используй для клиента, ответчика, истца, банка, МФО, нотариуса, ЧСИ, госоргана, представителя и иных значимых участников.",
       inputSchema: {
@@ -404,7 +642,7 @@ function createLegalServer() {
     },
     async ({ case_id, name, role, organization, notes }) => {
       try {
-        const data = await memoryRequest({
+        const data = await memory({
           action: "add_party", case_id, name,
           role: role || null,
           organization: organization || null,
@@ -413,7 +651,7 @@ function createLegalServer() {
         });
         return textResult("Участник сохранен в карточке дела.", data);
       } catch (error) {
-        return textResult("Не удалось сохранить участника дела.", { error: String(error) });
+        return memoryFailure(error, "Не удалось сохранить участника дела.");
       }
     }
   );
@@ -422,7 +660,7 @@ function createLegalServer() {
     "case_memory_add_deadline",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
-      title: "Сохранить срок по делу",
+      securitySchemes: memorySecuritySchemes,\n      title: "Сохранить срок по делу",
       description:
         "Сохраняет процессуальный или практический срок с основанием и источником. Если срок не проверен по актуальной норме, пометь статусом uncertain и не выдавай его как достоверный.",
       inputSchema: {
@@ -438,7 +676,7 @@ function createLegalServer() {
     },
     async ({ case_id, title, due_at, deadline_type, legal_basis, source_ref, status = "open", notes }) => {
       try {
-        const data = await memoryRequest({
+        const data = await memory({
           action: "add_deadline", case_id, title,
           due_at: due_at || null,
           deadline_type: deadline_type || null,
@@ -449,7 +687,7 @@ function createLegalServer() {
         });
         return textResult("Срок сохранен в карточке дела.", data);
       } catch (error) {
-        return textResult("Не удалось сохранить срок.", { error: String(error) });
+        return memoryFailure(error, "Не удалось сохранить срок.");
       }
     }
   );
@@ -458,7 +696,7 @@ function createLegalServer() {
     "case_memory_update_deadline",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false,"idempotentHint":true},
-      title: "Обновить срок по делу",
+      securitySchemes: memorySecuritySchemes,\n      title: "Обновить срок по делу",
       description:
         "Обновляет ранее сохраненный срок: дату, статус, основание или примечание. Используй, когда срок уточнен, исполнен, отменен или оказался предварительным.",
       inputSchema: {
@@ -475,7 +713,7 @@ function createLegalServer() {
     },
     async ({ case_id, deadline_id, ...patch }) => {
       try {
-        const data = await memoryRequest({
+        const data = await memory({
           action: "update_deadline",
           case_id,
           deadline_id,
@@ -483,7 +721,7 @@ function createLegalServer() {
         });
         return textResult("Срок обновлен.", data);
       } catch (error) {
-        return textResult("Не удалось обновить срок.", { error: String(error) });
+        return memoryFailure(error, "Не удалось обновить срок.");
       }
     }
   );
@@ -492,7 +730,7 @@ function createLegalServer() {
     "case_memory_add_fact",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
-      title: "Сохранить факт или версию по делу",
+      securitySchemes: memorySecuritySchemes,\n      title: "Сохранить факт или версию по делу",
       description:
         "Сохраняет отдельный подтвержденный факт, утверждение стороны, гипотезу, недостающее доказательство или риск с источником и уверенностью.",
       inputSchema: {
@@ -506,7 +744,7 @@ function createLegalServer() {
     },
     async ({ case_id, category, statement, source_ref, event_date, confidence }) => {
       try {
-        const data = await memoryRequest({
+        const data = await memory({
           action: "add_fact", case_id, category, statement,
           source_ref: source_ref || null,
           event_date: event_date || null,
@@ -514,7 +752,7 @@ function createLegalServer() {
         });
         return textResult("Элемент дела сохранен в постоянной памяти.", data);
       } catch (error) {
-        return textResult("Не удалось сохранить элемент дела.", { error: String(error) });
+        return memoryFailure(error, "Не удалось сохранить элемент дела.");
       }
     }
   );
@@ -523,7 +761,7 @@ function createLegalServer() {
     "case_memory_add_event",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
-      title: "Добавить событие в хронологию",
+      securitySchemes: memorySecuritySchemes,\n      title: "Добавить событие в хронологию",
       description:
         "Сохраняет юридически значимое событие в постоянной хронологии дела.",
       inputSchema: {
@@ -536,7 +774,7 @@ function createLegalServer() {
     },
     async ({ case_id, description, event_date, event_type, source_ref }) => {
       try {
-        const data = await memoryRequest({
+        const data = await memory({
           action: "add_event", case_id, description,
           event_date: event_date || null,
           event_type: event_type || null,
@@ -544,7 +782,7 @@ function createLegalServer() {
         });
         return textResult("Событие добавлено в хронологию дела.", data);
       } catch (error) {
-        return textResult("Не удалось сохранить событие.", { error: String(error) });
+        return memoryFailure(error, "Не удалось сохранить событие.");
       }
     }
   );
@@ -553,7 +791,7 @@ function createLegalServer() {
     "case_memory_add_document",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
-      title: "Сохранить документ в карточке дела",
+      securitySchemes: memorySecuritySchemes,\n      title: "Сохранить документ в карточке дела",
       description:
         "Сохраняет в постоянной памяти сведения о документе и его юридически значимую сводку. Используй после анализа нового договора, ответа, судебного акта, постановления, чека, доверенности и т.п.",
       inputSchema: {
@@ -570,7 +808,7 @@ function createLegalServer() {
     },
     async ({ case_id, filename, document_type, document_date, source_party, summary, sha256, storage_path, extracted_metadata = {} }) => {
       try {
-        const data = await memoryRequest({
+        const data = await memory({
           action: "add_document",
           case_id,
           filename: filename || null,
@@ -584,7 +822,7 @@ function createLegalServer() {
         });
         return textResult("Документ сохранен в карточке дела.", data);
       } catch (error) {
-        return textResult("Не удалось сохранить документ в карточке дела.", { error: String(error) });
+        return memoryFailure(error, "Не удалось сохранить документ в карточке дела.");
       }
     }
   );
@@ -593,7 +831,7 @@ function createLegalServer() {
     "case_memory_delete",
     {
       annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":true},
-      title: "Удалить сохраненное дело",
+      securitySchemes: memorySecuritySchemes,\n      title: "Удалить сохраненное дело",
       description:
         "Безвозвратно удаляет карточку дела и связанные факты, события, документы и обновления. Используй только по прямому запросу пользователя на удаление конкретного дела и только после явного подтверждения.",
       inputSchema: {
@@ -603,10 +841,10 @@ function createLegalServer() {
     },
     async ({ case_id, confirm }) => {
       try {
-        const data = await memoryRequest({ action: "delete_case", case_id, confirm });
+        const data = await memory({ action: "delete_case", case_id, confirm });
         return textResult("Дело и связанные данные удалены.", data);
       } catch (error) {
-        return textResult("Не удалось удалить дело.", { error: String(error) });
+        return memoryFailure(error, "Не удалось удалить дело.");
       }
     }
   );
@@ -826,9 +1064,28 @@ const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
 
 
+  if (req.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" });
+    res.end(JSON.stringify({
+      resource: MCP_RESOURCE_URL,
+      authorization_servers: [OAUTH_ISSUER_URL],
+      scopes_supported: MEMORY_OAUTH_SCOPES,
+      resource_documentation: `${MCP_RESOURCE_URL}/support`,
+      resource_policy_uri: `${MCP_RESOURCE_URL}/privacy`,
+      resource_tos_uri: `${MCP_RESOURCE_URL}/terms`
+    }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/support") {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>AI Юрист Казахстан — Поддержка</title></head><body style="font-family:system-ui;max-width:820px;margin:40px auto;padding:0 20px;line-height:1.55"><h1>Поддержка AI Юрист Казахстан</h1><p>По вопросам подключения, доступа к сохраненным делам, удаления данных и технических ошибок используйте репозиторий проекта: <a href="https://github.com/arrestofnet-hub/ai-lawyer/issues">GitHub Issues</a>.</p><p>Не публикуйте в открытом issue тексты договоров, удостоверения личности, банковские реквизиты и другие конфиденциальные материалы.</p></body></html>`);
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/privacy") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>AI Юрист Казахстан — Политика конфиденциальности</title></head><body style="font-family:system-ui;max-width:820px;margin:40px auto;padding:0 20px;line-height:1.55"><h1>Политика конфиденциальности</h1><p>AI Юрист Казахстан обрабатывает сведения, которые пользователь передает для юридического анализа: описание ситуации, данные карточки дела, хронологию, документы и связанные метаданные.</p><h2>Цель обработки</h2><p>Данные используются только для выполнения запрошенных юридических функций, сохранения контекста дела, подготовки анализа и документов, а также обеспечения работоспособности сервиса.</p><h2>Хранение</h2><p>Карточки дел и связанные структурированные данные могут храниться в защищенной базе Supabase. Серверная часть размещается на Railway. Сервис не должен публиковать пользовательские документы или данные открыто.</p><h2>Минимизация данных</h2><p>Сервис должен избегать возврата лишних персональных данных, технических секретов и внутренних идентификаторов. Пользователю рекомендуется не передавать данные, не относящиеся к юридической задаче.</p><h2>Удаление и исправление</h2><p>Пользователь может запросить удаление конкретного сохраненного дела. Удаление выполняется только после явного подтверждения и включает связанную структурированную память этого дела.</p><h2>Ограничение</h2><p>AI Юрист Казахстан не является государственным органом, судом, адвокатом или нотариусом и не заменяет индивидуальную профессиональную помощь в ситуациях, где она обязательна.</p><p>Версия политики: 29 сентября 2026.</p></body></html>`);
+    res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>AI Юрист Казахстан — Политика конфиденциальности</title></head><body style="font-family:system-ui;max-width:820px;margin:40px auto;padding:0 20px;line-height:1.55"><h1>Политика конфиденциальности</h1><p>AI Юрист Казахстан обрабатывает только данные, необходимые для функций, которые запрашивает пользователь.</p><h2>Категории данных</h2><p>Могут обрабатываться: описание юридической ситуации; участники, даты, суммы и хронология; содержание и метаданные переданных документов; сохраненная карточка дела; технические данные аутентификации и идентификатор аккаунта. Сервис не должен запрашивать сведения, не относящиеся к задаче.</p><h2>Цели</h2><p>Данные используются для юридического анализа по праву Республики Казахстан, ведения памяти дела, поиска противоречий, подготовки стратегии и проектов документов, а также для безопасности и работоспособности сервиса.</p><h2>Получатели и инфраструктура</h2><p>Структурированная память хранится в Supabase с разграничением доступа по аккаунтам; серверная часть размещается на Railway. Данные могут передаваться этим поставщикам инфраструктуры только в объеме, необходимом для работы сервиса. Пользовательские материалы не продаются рекламодателям.</p><h2>Срок хранения</h2><p>Сохраненная память дела хранится, пока пользователь не удалит конкретное дело или пока аккаунт/сервис не будет закрыт. Технические журналы могут храниться ограниченный период, необходимый для диагностики, безопасности и предотвращения злоупотреблений.</p><h2>Контроль пользователя</h2><p>Пользователь может просматривать сохраненные дела, исправлять их через обновления и удалить конкретное дело по явному запросу. Удаление карточки включает связанные структурированные факты, события, сроки, документы и историю обновлений этой карточки.</p><h2>Безопасность</h2><p>В публичном режиме доступ к памяти дела требует OAuth-аутентификации; доступ к строкам базы ограничивается политиками Row Level Security по идентификатору пользователя.</p><h2>Ограничение</h2><p>AI Юрист Казахстан не является государственным органом, судом, адвокатом или нотариусом и не заменяет индивидуальную профессиональную помощь в ситуациях, где она обязательна.</p><p>Версия политики: 29 сентября 2026.</p></body></html>`);
     return;
   }
 
@@ -843,7 +1100,7 @@ const httpServer = createServer(async (req, res) => {
     res.end(JSON.stringify({
       ok: true,
       service: "AI Юрист Казахстан",
-      version: "0.7.0",
+      version: "0.8.0",
       mcp: MCP_PATH,
       git_commit: process.env.RAILWAY_GIT_COMMIT_SHA || null
     }));
@@ -852,12 +1109,12 @@ const httpServer = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/ready") {
     try {
-      const memory = await memoryRequest({ action: "list_cases", limit: 1 });
+      const memory = await memory({ action: "list_cases", limit: 1 });
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({
         ok: true,
         service: "AI Юрист Казахстан",
-        version: "0.7.0",
+        version: "0.8.0",
         mcp: MCP_PATH,
         persistent_memory: "ok",
         remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null,
@@ -868,7 +1125,7 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify({
         ok: false,
         service: "AI Юрист Казахстан",
-        version: "0.7.0",
+        version: "0.8.0",
         persistent_memory: "error",
         error: String(error)
       }));
@@ -880,7 +1137,7 @@ const httpServer = createServer(async (req, res) => {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "content-type, mcp-session-id",
+      "Access-Control-Allow-Headers": "content-type, mcp-session-id, authorization",
       "Access-Control-Expose-Headers": "Mcp-Session-Id",
     });
     res.end();
@@ -892,7 +1149,15 @@ const httpServer = createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
-    const server = createLegalServer();
+    let authContext = {};
+    const authorization = req.headers.authorization;
+    if (authorization?.startsWith("Bearer ")) {
+      const token = authorization.slice(7).trim();
+      const verified = await verifySupabaseUserToken(token);
+      if (verified) authContext = verified;
+    }
+
+    const server = createLegalServer(authContext);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
