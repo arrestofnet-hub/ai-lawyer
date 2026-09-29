@@ -18,10 +18,13 @@ try {
     "legal_case_intake",
     "case_memory_create",
     "case_memory_list",
+    "case_memory_search",
     "case_memory_get",
     "case_memory_update",
     "case_memory_add_fact",
     "case_memory_add_event",
+    "case_memory_add_document",
+    "kz_official_act_fetch",
     "analyze_legal_document",
     "compare_case_documents",
     "contradiction_audit",
@@ -32,6 +35,14 @@ try {
 
   const missing = required.filter((n) => !names.has(n));
   if (missing.length) throw new Error("Missing MCP tools: " + missing.join(", "));
+
+  const lawResult = await client.callTool({
+    name: "kz_official_act_fetch",
+    arguments: { document_id: "95109", language: "rus", page: 1 }
+  });
+  if (lawResult?.structuredContent?.error || !lawResult?.structuredContent?.source_url) {
+    throw new Error("Official law fetch failed: " + JSON.stringify(lawResult?.structuredContent || {}));
+  }
 
   const listResult = await client.callTool({
     name: "case_memory_list",
