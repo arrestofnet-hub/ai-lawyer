@@ -113,12 +113,13 @@ const textResult = (message, data = {}) => ({
 function createLegalServer() {
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
-    version: "0.7.0",
+    version: "0.8.0",
   });
 
   server.registerTool(
     "legal_case_intake",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Разобрать юридическую ситуацию",
       description:
         "Структурирует юридическую ситуацию по праву Республики Казахстан: факты, стороны, даты, суммы, цель, доказательства, пробелы и вопросы для дальнейшего правового анализа. Используй в начале сложного дела.",
@@ -155,6 +156,7 @@ function createLegalServer() {
   server.registerTool(
     "kz_law_research",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Исследовать норму права РК",
       description:
         "Формирует точное задание на проверку законодательства Казахстана. Применяй перед ссылкой на статью закона, срок, полномочие органа или процессуальное правило.",
@@ -192,6 +194,7 @@ function createLegalServer() {
   server.registerTool(
     "kz_official_act_fetch",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":true,"destructiveHint":false},
       title: "Получить НПА из официального ЭКБ",
       description:
         "Получает документ напрямую из официального Эталонного контрольного банка НПА Республики Казахстан по его числовому идентификатору. Используй для проверки реквизитов, текста и официальной PDF-ссылки, когда document_id известен.",
@@ -218,6 +221,7 @@ function createLegalServer() {
   server.registerTool(
     "case_strategy",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Построить стратегию по делу",
       description:
         "Формирует каркас процессуальной стратегии по делу в Казахстане: цель, доказательства, слабые места, действия, сроки и альтернативные маршруты.",
@@ -250,6 +254,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_create",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
       title: "Создать память дела",
       description:
         "Создает постоянную карточку юридического дела в защищенной базе. Используй, когда пользователь начинает отдельное продолжающееся дело и контекст нужно сохранять между сообщениями.",
@@ -277,6 +282,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_list",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Найти сохраненное дело",
       description:
         "Возвращает список последних сохраненных юридических дел пользователя. Используй, когда нужно продолжить ранее начатое дело и case_id неизвестен.",
@@ -297,6 +303,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_search",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Поиск сохраненного дела",
       description:
         "Ищет постоянные карточки дел по названию, цели или сводке. Используй короткую ключевую фразу пользователя, когда он говорит 'дело Цоя', 'по коллектору' и т.п.",
@@ -318,6 +325,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_get",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Загрузить память дела",
       description:
         "Загружает полную постоянную карточку дела: сводку, факты, версии, события, документы и историю обновлений. Используй перед продолжением ранее начатого сложного дела.",
@@ -338,6 +346,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_update",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
       title: "Обновить память юридического дела",
       description:
         "Сохраняет новое существенное обстоятельство, документ, ответ органа или изменение позиции в постоянной истории дела. Не перезаписывает старую версию молча.",
@@ -381,6 +390,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_add_party",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
       title: "Сохранить участника дела",
       description:
         "Сохраняет участника дела и его процессуальную/фактическую роль. Используй для клиента, ответчика, истца, банка, МФО, нотариуса, ЧСИ, госоргана, представителя и иных значимых участников.",
@@ -411,6 +421,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_add_deadline",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
       title: "Сохранить срок по делу",
       description:
         "Сохраняет процессуальный или практический срок с основанием и источником. Если срок не проверен по актуальной норме, пометь статусом uncertain и не выдавай его как достоверный.",
@@ -446,6 +457,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_update_deadline",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false,"idempotentHint":true},
       title: "Обновить срок по делу",
       description:
         "Обновляет ранее сохраненный срок: дату, статус, основание или примечание. Используй, когда срок уточнен, исполнен, отменен или оказался предварительным.",
@@ -479,6 +491,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_add_fact",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
       title: "Сохранить факт или версию по делу",
       description:
         "Сохраняет отдельный подтвержденный факт, утверждение стороны, гипотезу, недостающее доказательство или риск с источником и уверенностью.",
@@ -509,6 +522,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_add_event",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
       title: "Добавить событие в хронологию",
       description:
         "Сохраняет юридически значимое событие в постоянной хронологии дела.",
@@ -538,6 +552,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_add_document",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":false},
       title: "Сохранить документ в карточке дела",
       description:
         "Сохраняет в постоянной памяти сведения о документе и его юридически значимую сводку. Используй после анализа нового договора, ответа, судебного акта, постановления, чека, доверенности и т.п.",
@@ -577,6 +592,7 @@ function createLegalServer() {
   server.registerTool(
     "case_memory_delete",
     {
+      annotations: {"readOnlyHint":false,"openWorldHint":false,"destructiveHint":true},
       title: "Удалить сохраненное дело",
       description:
         "Безвозвратно удаляет карточку дела и связанные факты, события, документы и обновления. Используй только по прямому запросу пользователя на удаление конкретного дела и только после явного подтверждения.",
@@ -598,6 +614,7 @@ function createLegalServer() {
   server.registerTool(
     "contradiction_audit",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Проверить дело на противоречия",
       description:
         "Проводит повторную проверку материалов как юрист-ревизор: ищет расхождения в датах, суммах, подписях, полномочиях, платежах, версиях сторон, приложениях, уведомлениях и последовательности событий.",
@@ -630,6 +647,7 @@ function createLegalServer() {
   server.registerTool(
     "second_lawyer_review",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Второй юрист по делу",
       description:
         "Независимо перепроверяет уже сформированную позицию. Не соглашается автоматически с пользователем или предыдущим анализом; ищет слабые места, альтернативное объяснение, недоказанные переходы и сильнейшие контраргументы другой стороны.",
@@ -671,6 +689,7 @@ function createLegalServer() {
   server.registerTool(
     "analyze_legal_document",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Проанализировать юридический документ",
       description:
         "Проводит юридический разбор текста документа по праву Республики Казахстан: определяет вид документа, стороны, даты, суммы, требования, ссылки на нормы, подписи/полномочия, приложения, пробелы, противоречия и процессуальное значение. Используй, когда пользователь загрузил или процитировал документ.",
@@ -716,6 +735,7 @@ function createLegalServer() {
   server.registerTool(
     "compare_case_documents",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Сравнить документы по делу",
       description:
         "Сопоставляет два документа или две версии позиции по одному делу и выявляет изменения в датах, суммах, фактах, правовом основании, требованиях, подписях, приложениях и версии событий.",
@@ -752,6 +772,7 @@ function createLegalServer() {
   server.registerTool(
     "draft_legal_document",
     {
+      annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       title: "Подготовить юридический документ РК",
       description:
         "Создает структуру юридического документа по праву Казахстана. Используй для жалобы, заявления, иска, ходатайства, запроса, возражения и претензии.",
