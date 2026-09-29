@@ -1100,6 +1100,88 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/oauth/consent") {
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "content-security-policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co; style-src 'unsafe-inline'; img-src 'self' data: https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    });
+    res.end(`<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Юрист Казахстан — доступ</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f5f6f8;color:#171717;margin:0}
+main{max-width:520px;margin:7vh auto;background:#fff;padding:28px;border-radius:18px;box-shadow:0 8px 30px #0001}
+h1{font-size:24px;margin-top:0}.muted{color:#666;font-size:14px}
+label{display:block;margin:14px 0 6px}input{width:100%;box-sizing:border-box;padding:11px;border:1px solid #ccc;border-radius:10px}
+.row{display:flex;gap:10px;margin-top:16px}button{padding:11px 15px;border:0;border-radius:10px;cursor:pointer}
+.primary{background:#111;color:white}.secondary{background:#eceef2}.danger{background:#fee2e2}
+#consent,#message{display:none}.scope{padding:10px;background:#f5f6f8;border-radius:10px;margin:12px 0}
+</style></head>
+<body><main>
+<h1>AI Юрист Казахстан</h1>
+<p class="muted">Подключение памяти юридических дел к вашему AI-агенту.</p>
+<div id="message"></div>
+<section id="login">
+<label>Email</label><input id="email" type="email" autocomplete="email">
+<label>Пароль</label><input id="password" type="password" autocomplete="current-password">
+<div class="row"><button class="primary" id="signin">Войти</button><button class="secondary" id="signup">Создать аккаунт</button></div>
+<p class="muted">Доступ к сохраненным делам изолирован по аккаунту. Пароль обрабатывается Supabase Auth и не передается MCP-инструментам.</p>
+</section>
+<section id="consent">
+<h2>Разрешить доступ?</h2>
+<p id="client"></p><div class="scope" id="scope"></div>
+<p class="muted">Агент сможет читать и изменять только юридические дела этого аккаунта в пределах функций AI Юрист Казахстан.</p>
+<div class="row"><button class="primary" id="approve">Разрешить</button><button class="danger" id="deny">Отклонить</button></div>
+</section>
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const SUPABASE_URL=${JSON.stringify(SUPABASE_URL)};
+const SUPABASE_KEY=${JSON.stringify(SUPABASE_PUBLISHABLE_KEY || "")};
+const supabase=createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const qs=new URLSearchParams(location.search);
+const authorizationId=qs.get("authorization_id");
+const login=document.getElementById("login"),consent=document.getElementById("consent"),message=document.getElementById("message");
+function showMessage(text,isError=false){message.style.display="block";message.textContent=text;message.style.color=isError?"#991b1b":"#166534";}
+async function loadConsent(){
+  if(!authorizationId){showMessage("Отсутствует authorization_id.",true);return;}
+  const {data:{session}}=await supabase.auth.getSession();
+  if(!session){login.style.display="block";consent.style.display="none";return;}
+  const {data,error}=await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
+  if(error){showMessage(error.message||"Не удалось получить параметры доступа.",true);return;}
+  if(data && !("authorization_id" in data) && data.redirect_url){location.assign(data.redirect_url);return;}
+  login.style.display="none";consent.style.display="block";
+  const clientName=data?.client?.name||data?.client_name||"AI-клиент";
+  const clientUri=data?.client?.uri||data?.client?.website_uri||"";
+  document.getElementById("client").textContent="Запрашивает: "+clientName+(clientUri?" ("+clientUri+")":"");
+  const scopes=Array.isArray(data?.scopes)?data.scopes.join(", "):(data?.scope||"email");
+  document.getElementById("scope").textContent="Разрешение: "+scopes;
+}
+document.getElementById("signin").onclick=async()=>{
+  const email=document.getElementById("email").value.trim(),password=document.getElementById("password").value;
+  const {error}=await supabase.auth.signInWithPassword({email,password});
+  if(error){showMessage(error.message,true);return;} await loadConsent();
+};
+document.getElementById("signup").onclick=async()=>{
+  const email=document.getElementById("email").value.trim(),password=document.getElementById("password").value;
+  const {data,error}=await supabase.auth.signUp({email,password});
+  if(error){showMessage(error.message,true);return;}
+  if(!data.session){showMessage("Аккаунт создан. Подтвердите email, затем вернитесь на эту страницу.");return;}
+  await loadConsent();
+};
+document.getElementById("approve").onclick=async()=>{
+  const {data,error}=await supabase.auth.oauth.approveAuthorization(authorizationId);
+  if(error){showMessage(error.message,true);return;} if(data?.redirect_url) location.assign(data.redirect_url);
+};
+document.getElementById("deny").onclick=async()=>{
+  const {data,error}=await supabase.auth.oauth.denyAuthorization(authorizationId);
+  if(error){showMessage(error.message,true);return;} if(data?.redirect_url) location.assign(data.redirect_url);
+};
+await loadConsent();
+</script></main></body></html>`);
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/support") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>AI Юрист Казахстан — Поддержка</title></head><body style="font-family:system-ui;max-width:820px;margin:40px auto;padding:0 20px;line-height:1.55"><h1>Поддержка AI Юрист Казахстан</h1><p>По вопросам подключения, доступа к сохраненным делам, удаления данных и технических ошибок используйте репозиторий проекта: <a href="https://github.com/arrestofnet-hub/ai-lawyer/issues">GitHub Issues</a>.</p><p>Не публикуйте в открытом issue тексты договоров, удостоверения личности, банковские реквизиты и другие конфиденциальные материалы.</p></body></html>`);
