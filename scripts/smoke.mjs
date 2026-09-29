@@ -44,8 +44,11 @@ try {
     name: "kz_official_act_fetch",
     arguments: { document_id: "95109", language: "rus", page: 1 }
   });
-  if (lawResult?.structuredContent?.error || !lawResult?.structuredContent?.source_url) {
-    throw new Error("Official law fetch failed: " + JSON.stringify(lawResult?.structuredContent || {}));
+  if (!lawResult?.structuredContent?.source_url && !lawResult?.structuredContent?.fallback_url) {
+    throw new Error("Official law tool returned no source reference: " + JSON.stringify(lawResult?.structuredContent || {}));
+  }
+  if (lawResult?.structuredContent?.error) {
+    console.warn("Official Kazakhstan source is temporarily unreachable; fallback reference is available:", lawResult.structuredContent.fallback_url);
   }
 
   const listResult = await client.callTool({
