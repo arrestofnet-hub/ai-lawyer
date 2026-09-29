@@ -28,6 +28,33 @@ async function memoryRequest(payload) {
 }
 
 
+async function fetchOfficialAct(documentId, language = "rus", page = 1) {
+  const id = String(documentId).trim();
+  if (!/^\d+$/.test(id)) throw new Error("document_id must be numeric");
+  const lang = ["rus", "kaz"].includes(language) ? language : "rus";
+  const url = `https://zan.gov.kz/api/documents/${id}/${lang}?withHtml=true&page=${page}&r=${Date.now()}`;
+  const response = await fetch(url, {
+    headers: {
+      "accept": "application/json,text/plain,*/*",
+      "user-agent": "AI-Lawyer-KZ/0.6 (+legal-research)"
+    }
+  });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`Official source HTTP ${response.status}`);
+  let data;
+  try { data = JSON.parse(raw); } catch { data = { raw_text: raw.slice(0, 60000) }; }
+  return {
+    source: "Эталонный контрольный банк НПА Республики Казахстан",
+    source_url: url,
+    pdf_url: `https://zan.gov.kz/api/documents/${id}/${lang}/download/pdf`,
+    document_id: id,
+    language: lang,
+    page,
+    fetched_at: new Date().toISOString(),
+    data
+  };
+}
+
 async function runMemorySelfTest() {
   try {
     const listed = await memoryRequest({ action: "list_cases", limit: 50 });
@@ -86,7 +113,7 @@ const textResult = (message, data = {}) => ({
 function createLegalServer() {
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
-    version: "0.5.0",
+    version: "0.6.0",
   });
 
   server.registerTool(
@@ -159,6 +186,32 @@ function createLegalServer() {
         "Сформировано задание на проверку законодательства РК. Перед окончательным выводом используй актуальный официальный источник.",
         data
       );
+    }
+  );
+
+  server.registerTool(
+    "kz_official_act_fetch",
+    {
+      title: "Получить НПА из официального ЭКБ",
+      description:
+        "Получает документ напрямую из официального Эталонного контрольного банка НПА Республики Казахстан по его числовому идентификатору. Используй для проверки реквизитов, текста и официальной PDF-ссылки, когда document_id известен.",
+      inputSchema: {
+        document_id: z.string().regex(/^\\d+$/).describe("Числовой идентификатор документа в ЭКБ zan.gov.kz"),
+        language: z.enum(["rus","kaz"]).optional(),
+        page: z.number().int().min(1).max(200).optional(),
+      },
+    },
+    async ({ document_id, language = "rus", page = 1 }) => {
+      try {
+        const data = await fetchOfficialAct(document_id, language, page);
+        return textResult("Документ получен из официального ЭКБ. Проверяй юридический вывод по реквизитам и редакции документа, а не только по названию.", data);
+      } catch (error) {
+        return textResult("Не удалось получить документ из официального ЭКБ.", {
+          document_id,
+          error: String(error),
+          fallback_url: `https://zan.gov.kz/api/documents/${document_id}/${language}/download/pdf`
+        });
+      }
     }
   );
 
@@ -237,6 +290,27 @@ function createLegalServer() {
         return textResult("Сохраненные дела получены.", data);
       } catch (error) {
         return textResult("Не удалось получить список дел.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_search",
+    {
+      title: "Поиск сохраненного дела",
+      description:
+        "Ищет постоянные карточки дел по названию, цели или сводке. Используй короткую ключевую фразу пользователя, когда он говорит 'дело Цоя', 'по коллектору' и т.п.",
+      inputSchema: {
+        query: z.string().min(2),
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async ({ query, limit = 20 }) => {
+      try {
+        const data = await memoryRequest({ action: "search_cases", query, limit });
+        return textResult("Поиск по сохраненным делам выполнен.", data);
+      } catch (error) {
+        return textResult("Не удалось выполнить поиск по памяти дел.", { error: String(error) });
       }
     }
   );
@@ -359,6 +433,66 @@ function createLegalServer() {
         return textResult("Событие добавлено в хронологию дела.", data);
       } catch (error) {
         return textResult("Не удалось сохранить событие.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_add_document",
+    {
+      title: "Сохранить документ в карточке дела",
+      description:
+        "Сохраняет в постоянной памяти сведения о документе и его юридически значимую сводку. Используй после анализа нового договора, ответа, судебного акта, постановления, чека, доверенности и т.п.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+        filename: z.string().optional(),
+        document_type: z.string().optional(),
+        document_date: z.string().optional(),
+        source_party: z.string().optional(),
+        summary: z.string().min(5),
+        sha256: z.string().optional(),
+        storage_path: z.string().optional(),
+        extracted_metadata: z.record(z.any()).optional(),
+      },
+    },
+    async ({ case_id, filename, document_type, document_date, source_party, summary, sha256, storage_path, extracted_metadata = {} }) => {
+      try {
+        const data = await memoryRequest({
+          action: "add_document",
+          case_id,
+          filename: filename || null,
+          document_type: document_type || null,
+          document_date: document_date || null,
+          source_party: source_party || null,
+          summary,
+          sha256: sha256 || null,
+          storage_path: storage_path || null,
+          extracted_metadata,
+        });
+        return textResult("Документ сохранен в карточке дела.", data);
+      } catch (error) {
+        return textResult("Не удалось сохранить документ в карточке дела.", { error: String(error) });
+      }
+    }
+  );
+
+  server.registerTool(
+    "case_memory_delete",
+    {
+      title: "Удалить сохраненное дело",
+      description:
+        "Безвозвратно удаляет карточку дела и связанные факты, события, документы и обновления. Используй только по прямому запросу пользователя на удаление конкретного дела и только после явного подтверждения.",
+      inputSchema: {
+        case_id: z.string().uuid(),
+        confirm: z.literal(true).describe("Должно быть true только после явного подтверждения пользователя"),
+      },
+    },
+    async ({ case_id, confirm }) => {
+      try {
+        const data = await memoryRequest({ action: "delete_case", case_id, confirm });
+        return textResult("Дело и связанные данные удалены.", data);
+      } catch (error) {
+        return textResult("Не удалось удалить дело.", { error: String(error) });
       }
     }
   );
@@ -590,7 +724,7 @@ const httpServer = createServer(async (req, res) => {
     res.end(JSON.stringify({
       ok: true,
       service: "AI Юрист Казахстан",
-      version: "0.5.0",
+      version: "0.6.0",
       mcp: MCP_PATH
     }));
     return;
@@ -603,7 +737,7 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify({
         ok: true,
         service: "AI Юрист Казахстан",
-        version: "0.5.0",
+        version: "0.6.0",
         mcp: MCP_PATH,
         persistent_memory: "ok",
         remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null
@@ -613,7 +747,7 @@ const httpServer = createServer(async (req, res) => {
       res.end(JSON.stringify({
         ok: false,
         service: "AI Юрист Казахстан",
-        version: "0.5.0",
+        version: "0.6.0",
         persistent_memory: "error",
         error: String(error)
       }));
