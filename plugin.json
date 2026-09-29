@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ai-lawyer-kz",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "AI-юрист по законодательству Республики Казахстан с постоянной памятью дела, анализом документов, поиском противоречий, стратегией и подготовкой проектов юридических документов.",
   "author": {
     "name": "AI Lawyer KZ",
