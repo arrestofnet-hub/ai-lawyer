@@ -27,6 +27,14 @@ jobs:
           unzip -q /tmp/lastworld.zip -d /tmp/lastworld-src
           test -f /tmp/lastworld-src/plugin/build.gradle.kts
 
+      - name: Inspect case coin implementation
+        shell: bash
+        run: |
+          echo "=== CASE COIN REFERENCES ==="
+          grep -Rni -C 5 -E "case.?coin|caseCoins|casecoins|Кейс" /tmp/lastworld-src/plugin/src/main || true
+          echo "=== COMMAND REGISTRATION REFERENCES ==="
+          grep -Rni -C 5 -E "onCommand|casecoins|setlevel|adminabsolute" /tmp/lastworld-src/plugin/src/main || true
+
       - name: Set up Java 25
         uses: actions/setup-java@v4
         with:
@@ -56,5 +64,3 @@ jobs:
             git commit -m "Build LastWorldCore public jar"
             git push
           fi
-
-# rebuild-trigger: all secure source chunks uploaded
