@@ -452,7 +452,7 @@ function createLegalServer(authContext = {}) {
       description:
         "Получает документ напрямую из официального Эталонного контрольного банка НПА Республики Казахстан по его числовому идентификатору. Используй для проверки реквизитов, текста и официальной PDF-ссылки, когда document_id известен.",
       inputSchema: {
-        document_id: z.string().regex(/^\\d+$/).describe("Числовой идентификатор документа в ЭКБ zan.gov.kz"),
+        document_id: z.string().regex(/^\d+$/).describe("Числовой идентификатор документа в ЭКБ zan.gov.kz"),
         language: z.enum(["rus","kaz"]).optional(),
         page: z.number().int().min(1).max(200).optional(),
       },
