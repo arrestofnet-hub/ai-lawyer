@@ -2,7 +2,7 @@
 
 Версия: 0.8.0  
 Тип: remote MCP + skill  
-Production MCP: https://ai-lawyer-kz-production.up.railway.app/mcp
+Production MCP: https://ai-lawyer-kz-v2-production.up.railway.app/mcp
 
 ## Позиционирование
 
@@ -116,10 +116,10 @@ Scenario: пользователь A создал сохраненное дел�
 
 ## Privacy / support / terms
 
-- Website: https://ai-lawyer-kz-production.up.railway.app
-- Support: https://ai-lawyer-kz-production.up.railway.app/support
-- Privacy: https://ai-lawyer-kz-production.up.railway.app/privacy
-- Terms: https://ai-lawyer-kz-production.up.railway.app/terms
+- Website: https://ai-lawyer-kz-v2-production.up.railway.app
+- Support: https://ai-lawyer-kz-v2-production.up.railway.app/support
+- Privacy: https://ai-lawyer-kz-v2-production.up.railway.app/privacy
+- Terms: https://ai-lawyer-kz-v2-production.up.railway.app/terms
 
 Публичный режим памяти должен работать только через OAuth + пользовательский JWT + Supabase RLS. Внутренний server-key путь используется только для инфраструктурного self-test и не должен быть доступен пользователю.
 
