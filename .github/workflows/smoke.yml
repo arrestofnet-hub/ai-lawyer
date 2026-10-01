@@ -1,4 +1,5 @@
 name: MCP smoke test
+# diagnostic rerun after readiness fix
 
 on:
   workflow_dispatch:
