@@ -14,9 +14,9 @@
       "Read",
       "Write"
     ],
-    "websiteURL": "https://ai-lawyer-kz-production.up.railway.app",
-    "privacyPolicyURL": "https://ai-lawyer-kz-production.up.railway.app/privacy",
-    "termsOfServiceURL": "https://ai-lawyer-kz-production.up.railway.app/terms",
+    "websiteURL": "https://ai-lawyer-kz-v2-production.up.railway.app",
+    "privacyPolicyURL": "https://ai-lawyer-kz-v2-production.up.railway.app/privacy",
+    "termsOfServiceURL": "https://ai-lawyer-kz-v2-production.up.railway.app/terms",
     "defaultPrompt": [
       "Разбери мою юридическую ситуацию по законодательству Казахстана.",
       "Продолжи сохраненное дело и покажи, что изменилось.",
