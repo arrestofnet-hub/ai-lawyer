@@ -1229,7 +1229,7 @@ await loadConsent();
 
   if (req.method === "GET" && url.pathname === "/ready") {
     try {
-      const memory = await memory({ action: "list_cases", limit: 1 });
+      const memoryStatus = await memoryRequest({ action: "list_cases", limit: 1 });
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({
         ok: true,
@@ -1237,7 +1237,7 @@ await loadConsent();
         version: "0.8.0",
         mcp: MCP_PATH,
         persistent_memory: "ok",
-        remembered_cases: Array.isArray(memory?.cases) ? memory.cases.length : null,
+        remembered_cases: Array.isArray(memoryStatus?.cases) ? memoryStatus.cases.length : null,
         git_commit: process.env.RAILWAY_GIT_COMMIT_SHA || null
       }));
     } catch (error) {
