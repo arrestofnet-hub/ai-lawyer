@@ -49,3 +49,17 @@ for (const required of [
 }
 
 console.log(`plugin validation ok: ${tools.length} tools, 5 positive tests, 3 negative tests`);
+
+const iface = plugin.extensions?.["com.openai"]?.interface ?? {};
+for (const key of ["websiteURL", "supportURL", "privacyPolicyURL", "termsOfServiceURL"]) {
+  if (!iface[key]) throw new Error(`Missing required listing URL: ${key}`);
+}
+if (!iface.logo || !fs.existsSync(iface.logo.replace(/^\.\//, ""))) throw new Error("Missing plugin logo asset");
+if (!iface.composerIcon || !fs.existsSync(iface.composerIcon.replace(/^\.\//, ""))) throw new Error("Missing composer icon asset");
+if (!Array.isArray(iface.defaultPrompt) || iface.defaultPrompt.length < 1 || iface.defaultPrompt.length > 3) throw new Error("defaultPrompt must contain 1-3 prompts");
+const review = plugin.extensions?.["com.openai"]?.review ?? {};
+if ((review.test_cases?.positive?.length ?? 0) < 5) throw new Error("At least 5 positive review tests required");
+if ((review.test_cases?.negative?.length ?? 0) < 3) throw new Error("At least 3 negative review tests required");
+const publication = plugin.extensions?.["com.openai"]?.publication ?? {};
+if (!Array.isArray(publication.countries) || publication.countries.length < 1) throw new Error("Publication countries required");
+console.log("publication metadata ok");
