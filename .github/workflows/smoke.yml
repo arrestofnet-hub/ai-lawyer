@@ -1,5 +1,5 @@
 name: MCP smoke test
-# diagnostic rerun after readiness fix
+# diagnostic rerun: inspect official law result
 
 on:
   workflow_dispatch:
