@@ -50,11 +50,11 @@ AI Юрист должен работать не как справочник, а
 
 Production:
 
-- Health: `https://ai-lawyer-kz-production.up.railway.app/health`
-- Readiness + persistent memory check: `https://ai-lawyer-kz-production.up.railway.app/ready`
-- MCP: `https://ai-lawyer-kz-production.up.railway.app/mcp`
-- Privacy: `https://ai-lawyer-kz-production.up.railway.app/privacy`
-- Terms: `https://ai-lawyer-kz-production.up.railway.app/terms`
+- Health: `https://ai-lawyer-kz-v2-production.up.railway.app/health`
+- Readiness + persistent memory check: `https://ai-lawyer-kz-v2-production.up.railway.app/ready`
+- MCP: `https://ai-lawyer-kz-v2-production.up.railway.app/mcp`
+- Privacy: `https://ai-lawyer-kz-v2-production.up.railway.app/privacy`
+- Terms: `https://ai-lawyer-kz-v2-production.up.railway.app/terms`
 
 ## Контроль качества
 
