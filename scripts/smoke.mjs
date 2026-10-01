@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const endpoint = process.env.MCP_URL || "https://ai-lawyer-kz-production.up.railway.app/mcp";
+const endpoint = process.env.MCP_URL || "https://ai-lawyer-kz-v2-production.up.railway.app/mcp";
 const client = new Client({ name: "ai-lawyer-kz-smoke", version: "1.0.0" });
 
 const fail = (message) => {
