@@ -44,7 +44,6 @@ try {
     name: "kz_official_act_fetch",
     arguments: { document_id: "95109", language: "rus", page: 1 }
   });
-  console.log("LAW_RESULT_JSON", JSON.stringify(lawResult));
   if (!lawResult?.structuredContent?.source_url && !lawResult?.structuredContent?.fallback_url) {
     throw new Error("Official law tool returned no source reference: " + JSON.stringify(lawResult?.structuredContent || {}));
   }
