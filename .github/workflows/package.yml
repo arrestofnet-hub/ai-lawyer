@@ -1,0 +1,48 @@
+name: Build plugin submission package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "plugin.json"
+      - "mcp.json"
+      - ".mcp.json"
+      - ".codex-plugin/plugin.json"
+      - "skills/**"
+      - "assets/**"
+      - "PRIVACY.md"
+      - "TERMS.md"
+      - ".github/workflows/package.yml"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build clean submission ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/package/.codex-plugin dist/package/skills/kz-legal dist/package/assets
+          cp plugin.json mcp.json .mcp.json dist/package/
+          cp .codex-plugin/plugin.json dist/package/.codex-plugin/plugin.json
+          cp skills/kz-legal/SKILL.md dist/package/skills/kz-legal/SKILL.md
+          cp assets/logo.svg assets/composer.svg dist/package/assets/
+          cp PRIVACY.md TERMS.md dist/package/
+          (
+            cd dist/package
+            zip -r ../ai-lawyer-kz-plugin-0.8.0.zip .
+          )
+          unzip -l dist/ai-lawyer-kz-plugin-0.8.0.zip
+          if unzip -l dist/ai-lawyer-kz-plugin-0.8.0.zip | grep -E 'server\.js|SUPABASE|\.github|scripts/'; then
+            echo "Unexpected runtime/internal files in submission ZIP"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-lawyer-kz-plugin-0.8.0
+          path: dist/ai-lawyer-kz-plugin-0.8.0.zip
+          if-no-files-found: error
+          retention-days: 14
