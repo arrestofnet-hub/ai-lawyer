@@ -11,7 +11,7 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || "https://xfpjxnnuvxmescjbndxo.
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
 const PUBLIC_OAUTH_ENABLED = process.env.MCP_PUBLIC_OAUTH_ENABLED === "true";
 const OAUTH_ISSUER_URL = process.env.OAUTH_ISSUER_URL || `${SUPABASE_URL}/auth/v1`;
-const MCP_RESOURCE_URL = (process.env.MCP_RESOURCE_URL || "https://ai-lawyer-kz-production.up.railway.app").replace(/\/$/, "");
+const MCP_RESOURCE_URL = (process.env.MCP_RESOURCE_URL || "https://ai-lawyer-kz-v2-production.up.railway.app").replace(/\/$/, "");
 const MEMORY_OAUTH_SCOPES = ["email"];
 const OPENAI_APPS_CHALLENGE_TOKEN = process.env.OPENAI_APPS_CHALLENGE_TOKEN || "";
 
