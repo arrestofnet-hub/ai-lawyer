@@ -24,7 +24,7 @@ jobs:
         run: |
           set -e
           for i in {1..30}; do
-            code=$(curl -sS -o /tmp/ready.json -w "%{http_code}" https://ai-lawyer-kz-production.up.railway.app/ready || true)
+            code=$(curl -sS -o /tmp/ready.json -w "%{http_code}" https://ai-lawyer-kz-v2-production.up.railway.app/ready || true)
             cat /tmp/ready.json || true
             if [ "$code" = "200" ] && grep -q "\"git_commit\":\"$GITHUB_SHA\"" /tmp/ready.json; then exit 0; fi
             sleep 10
