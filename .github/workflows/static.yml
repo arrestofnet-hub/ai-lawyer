@@ -23,3 +23,5 @@ jobs:
           test -f PRIVACY.md
           test -f TERMS.md
           test -f skills/kz-legal/SKILL.md
+      - name: Validate publication package
+        run: node scripts/validate-plugin.mjs
