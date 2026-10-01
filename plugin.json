@@ -5,9 +5,9 @@
   "description": "AI-юрист по законодательству Республики Казахстан с постоянной памятью дела, анализом документов, поиском противоречий, стратегией и подготовкой проектов юридических документов.",
   "author": {
     "name": "AI Lawyer KZ",
-    "url": "https://ai-lawyer-kz-production.up.railway.app"
+    "url": "https://ai-lawyer-kz-v2-production.up.railway.app"
   },
-  "homepage": "https://ai-lawyer-kz-production.up.railway.app",
+  "homepage": "https://ai-lawyer-kz-v2-production.up.railway.app",
   "repository": "https://github.com/arrestofnet-hub/ai-lawyer",
   "keywords": [
     "kazakhstan",
@@ -28,9 +28,9 @@
           "Read",
           "Write"
         ],
-        "websiteURL": "https://ai-lawyer-kz-production.up.railway.app",
-        "privacyPolicyURL": "https://ai-lawyer-kz-production.up.railway.app/privacy",
-        "termsOfServiceURL": "https://ai-lawyer-kz-production.up.railway.app/terms",
+        "websiteURL": "https://ai-lawyer-kz-v2-production.up.railway.app",
+        "privacyPolicyURL": "https://ai-lawyer-kz-v2-production.up.railway.app/privacy",
+        "termsOfServiceURL": "https://ai-lawyer-kz-v2-production.up.railway.app/terms",
         "defaultPrompt": [
           "Разбери мою юридическую ситуацию по законодательству Казахстана.",
           "Продолжи сохраненное дело и покажи, что изменилось.",
