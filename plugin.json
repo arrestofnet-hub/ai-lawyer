@@ -1,13 +1,14 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ai-lawyer-kz",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "AI-юрист по законодательству Республики Казахстан с постоянной памятью дела, анализом документов, поиском противоречий, стратегией и подготовкой проектов юридических документов.",
   "author": {
     "name": "AI Lawyer KZ",
-    "url": "https://ai-lawyer-kz-v2-production.up.railway.app"
+    "email": "arrestofnet@gmail.com",
+    "url": "https://ailawyer.kz"
   },
-  "homepage": "https://ai-lawyer-kz-v2-production.up.railway.app",
+  "homepage": "https://ailawyer.kz",
   "repository": "https://github.com/arrestofnet-hub/ai-lawyer",
   "keywords": [
     "kazakhstan",
@@ -21,22 +22,22 @@
       "interface": {
         "displayName": "AI Lawyer Kazakhstan",
         "shortDescription": "Kazakhstan legal assistant",
-        "longDescription": "Helps users work through legal matters under the law of the Republic of Kazakhstan: preserves case context, analyzes and compares documents, identifies contradictions and evidence gaps, reviews legal positions, and drafts legal documents. It does not replace a licensed lawyer and must not present unverified legal provisions as established law.",
+        "longDescription": "Helps users work through legal matters under the law of the Republic of Kazakhstan: structures facts and chronology, preserves authenticated case context, analyzes and compares documents, identifies contradictions and evidence gaps, reviews legal positions, and drafts legal documents. It is an AI legal-information and workflow assistant, not a government body, court, advocate, or notary. Users should verify legally significant conclusions, current law, deadlines, and filings before acting.",
         "developerName": "AI Lawyer KZ",
         "category": "Productivity",
         "capabilities": [
           "Read",
           "Write"
         ],
-        "websiteURL": "https://ai-lawyer-kz-v2-production.up.railway.app",
-        "privacyPolicyURL": "https://ai-lawyer-kz-v2-production.up.railway.app/privacy",
-        "termsOfServiceURL": "https://ai-lawyer-kz-v2-production.up.railway.app/terms",
+        "websiteURL": "https://ailawyer.kz",
+        "privacyPolicyURL": "https://ailawyer.kz/privacy",
+        "termsOfServiceURL": "https://ailawyer.kz/terms",
         "defaultPrompt": [
-          "Analyze my legal situation under Kazakhstan law and give the next practical step.",
-          "Review this legal document, identify contradictions, and show what evidence is missing.",
-          "Draft a Kazakhstan legal document from the facts I provide without inventing citations."
+          "Analyze my Kazakhstan legal situation and show the next practical step.",
+          "Review these legal documents and identify contradictions and missing evidence.",
+          "Draft a Kazakhstan legal document from my facts without inventing citations."
         ],
-        "supportURL": "https://ai-lawyer-kz-v2-production.up.railway.app/support",
+        "supportURL": "https://ailawyer.kz/support",
         "brandColor": "#173B6C",
         "composerIcon": "./assets/composer.svg",
         "logo": "./assets/logo.svg"
@@ -97,7 +98,7 @@
         "countries": [
           "KZ"
         ],
-        "release_notes": "Initial public release of AI Lawyer Kazakhstan with Kazakhstan-law analysis, document review, contradiction checks, legal drafting, and authenticated persistent case memory.",
+        "release_notes": "Initial public directory release on ailawyer.kz with Kazakhstan-law analysis, document comparison, contradiction checks, legal drafting, OAuth-authenticated case memory, and production HTTPS MCP.",
         "translations": {
           "ru-RU": {
             "subtitle": "Правовой помощник по РК",
