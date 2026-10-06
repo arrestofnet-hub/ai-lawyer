@@ -1,0 +1,32 @@
+name: Publish OpenAI demo video
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/upload-demo.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download finalized demo video
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          curl -L --fail --retry 3             'https://d2jqrm6oza8nb6.cloudfront.net/datasets/72053450-a7b3-47d1-8f64-025d2b568be4.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiYjA5YTllYzM2NmRiYjg3MyIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MTQyNTYwM30.z847HjPixzWPVZGY8bJWMB0VNF1vsqoV4kGI4Emacl0'             -o docs/AI_Lawyer_Kazakhstan_Demo_For_OpenAI.mp4
+          test -s docs/AI_Lawyer_Kazakhstan_Demo_For_OpenAI.mp4
+      - name: Commit demo video
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/AI_Lawyer_Kazakhstan_Demo_For_OpenAI.mp4
+          git commit -m "Publish OpenAI review demo video"
+          git push
