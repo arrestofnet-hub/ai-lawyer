@@ -22,7 +22,7 @@
       "interface": {
         "displayName": "AI Lawyer Kazakhstan",
         "shortDescription": "Kazakhstan legal assistant",
-        "longDescription": "Helps users work through legal matters under the law of the Republic of Kazakhstan: structures facts and chronology, preserves authenticated case context, analyzes and compares documents, identifies contradictions and evidence gaps, reviews legal positions, and drafts legal documents. It is an AI legal-information and workflow assistant, not a government body, court, advocate, or notary. Users should verify legally significant conclusions, current law, deadlines, and filings before acting.",
+        "longDescription": "Helps users work through legal matters under the law of the Republic of Kazakhstan: structures facts and chronology, analyzes and compares documents, identifies contradictions and evidence gaps, reviews legal positions, researches official Kazakhstan legal sources, and drafts legal documents. It is an AI legal-information and workflow assistant, not a government body, court, advocate, or notary. Users should verify legally significant conclusions, current law, deadlines, and filings before acting.",
         "developerName": "AI Lawyer KZ",
         "category": "Productivity",
         "capabilities": [
@@ -52,10 +52,10 @@
               "expected_behavior": "Separate confirmed facts from claims, identify missing evidence, and give the next practical step without inventing legal provisions."
             },
             {
-              "description": "Create and continue a saved legal case",
-              "prompt": "Create a case called Review test collection, objective: dispute collection, stage: pre-trial. Then find that case and continue it.",
-              "tools_triggered": "case_memory_create, case_memory_search, case_memory_get",
-              "expected_behavior": "Create the case for the authenticated reviewer, retrieve only that reviewer's case, and continue from the saved context."
+              "description": "Research a Kazakhstan legal issue",
+              "prompt": "I need to challenge an enforcement action. Build a Kazakhstan-law research checklist for the applicable rules, deadlines, competent authority, and evidence I should verify before acting.",
+              "tools_triggered": "kz_law_research",
+              "expected_behavior": "Produce a verification-oriented research plan using authoritative Kazakhstan sources and avoid presenting unverified article numbers as confirmed law."
             },
             {
               "description": "Analyze an official response",
@@ -99,15 +99,15 @@
         "countries": [
           "KZ"
         ],
-        "release_notes": "Initial public directory release on ailawyer.kz with Kazakhstan-law analysis, document comparison, contradiction checks, legal drafting, OAuth-authenticated case memory, and production HTTPS MCP.",
+        "release_notes": "Initial public directory release on ailawyer.kz with Kazakhstan-law analysis, official-law research, document comparison, contradiction checks, legal drafting, and production HTTPS MCP. Authenticated persistent case memory is planned for a later update.",
         "translations": {
           "ru-RU": {
             "subtitle": "Правовой помощник по РК",
-            "description": "Помогает вести юридическое дело по законодательству Республики Казахстан: сохраняет контекст дела, анализирует документы, ищет противоречия, проверяет правовую позицию и готовит проекты юридических документов. Не заменяет адвоката и не должен выдавать непроверенные нормы как достоверные."
+            "description": "Помогает работать с юридическими вопросами по законодательству Республики Казахстан: анализирует документы, выявляет противоречия и пробелы в доказательствах, проверяет правовую позицию, формирует задания на проверку законодательства и готовит проекты юридических документов. Не заменяет адвоката и не должен выдавать непроверенные нормы как достоверные."
           },
           "kk-KZ": {
             "subtitle": "ҚР құқықтық көмекшісі",
-            "description": "Қазақстан Республикасының заңнамасы бойынша заңдық істі жүргізуге көмектеседі: істің контекстін сақтайды, құжаттарды талдайды, қайшылықтарды табады, құқықтық ұстанымды тексереді және заңдық құжаттардың жобаларын дайындайды. Адвокатты алмастырмайды және тексерілмеген құқық нормаларын нақты факт ретінде ұсынбауы тиіс."
+            "description": "Қазақстан Республикасының заңнамасы бойынша құқықтық мәселелермен жұмыс істеуге көмектеседі: құжаттарды талдайды, қайшылықтар мен дәлелдеме олқылықтарын анықтайды, құқықтық ұстанымды тексереді, заңнаманы тексеруге тапсырмалар қалыптастырады және заңдық құжаттардың жобаларын дайындайды. Адвокатты алмастырмайды және тексерілмеген құқық нормаларын нақты факт ретінде ұсынбауы тиіс."
           }
         }
       }
