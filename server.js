@@ -373,6 +373,7 @@ function createLegalServer(authContext = {}) {
     "legal_case_intake",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Разобрать юридическую ситуацию",
       description:
         "Структурирует юридическую ситуацию по праву Республики Казахстан: факты, стороны, даты, суммы, цель, доказательства, пробелы и вопросы для дальнейшего правового анализа. Используй в начале сложного дела.",
@@ -410,6 +411,7 @@ function createLegalServer(authContext = {}) {
     "kz_law_research",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Исследовать норму права РК",
       description:
         "Формирует точное задание на проверку законодательства Казахстана. Применяй перед ссылкой на статью закона, срок, полномочие органа или процессуальное правило.",
@@ -448,6 +450,7 @@ function createLegalServer(authContext = {}) {
     "kz_official_act_fetch",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":true,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Получить НПА из официального ЭКБ",
       description:
         "Получает документ напрямую из официального Эталонного контрольного банка НПА Республики Казахстан по его числовому идентификатору. Используй для проверки реквизитов, текста и официальной PDF-ссылки, когда document_id известен.",
@@ -475,6 +478,7 @@ function createLegalServer(authContext = {}) {
     "case_strategy",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Построить стратегию по делу",
       description:
         "Формирует каркас процессуальной стратегии по делу в Казахстане: цель, доказательства, слабые места, действия, сроки и альтернативные маршруты.",
@@ -880,6 +884,7 @@ function createLegalServer(authContext = {}) {
     "contradiction_audit",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Проверить дело на противоречия",
       description:
         "Проводит повторную проверку материалов как юрист-ревизор: ищет расхождения в датах, суммах, подписях, полномочиях, платежах, версиях сторон, приложениях, уведомлениях и последовательности событий.",
@@ -913,6 +918,7 @@ function createLegalServer(authContext = {}) {
     "second_lawyer_review",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Второй юрист по делу",
       description:
         "Независимо перепроверяет уже сформированную позицию. Не соглашается автоматически с пользователем или предыдущим анализом; ищет слабые места, альтернативное объяснение, недоказанные переходы и сильнейшие контраргументы другой стороны.",
@@ -955,6 +961,7 @@ function createLegalServer(authContext = {}) {
     "analyze_legal_document",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Проанализировать юридический документ",
       description:
         "Проводит юридический разбор текста документа по праву Республики Казахстан: определяет вид документа, стороны, даты, суммы, требования, ссылки на нормы, подписи/полномочия, приложения, пробелы, противоречия и процессуальное значение. Используй, когда пользователь загрузил или процитировал документ.",
@@ -1001,6 +1008,7 @@ function createLegalServer(authContext = {}) {
     "compare_case_documents",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Сравнить документы по делу",
       description:
         "Сопоставляет два документа или две версии позиции по одному делу и выявляет изменения в датах, суммах, фактах, правовом основании, требованиях, подписях, приложениях и версии событий.",
@@ -1038,6 +1046,7 @@ function createLegalServer(authContext = {}) {
     "draft_legal_document",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
+      securitySchemes: [{ type: "noauth" }],
       title: "Подготовить юридический документ РК",
       description:
         "Создает структуру юридического документа по праву Казахстана. Используй для жалобы, заявления, иска, ходатайства, запроса, возражения и претензии.",
