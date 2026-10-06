@@ -13,4 +13,4 @@ dependencies:
       value: "ai-lawyer-kz"
       description: "Память дела, анализ документов, стратегия и подготовка юридических документов по праву РК"
       transport: "streamable_http"
-      url: "https://ai-lawyer-kz-production.up.railway.app/mcp"
+      url: "https://mcp.ailawyer.kz/mcp"
