@@ -1,8 +1,8 @@
 # AI Юрист Казахстан — пакет для публикации плагина
 
-Версия: 0.8.0  
+Версия: 0.9.0  
 Тип: remote MCP + skill  
-Production MCP: https://ai-lawyer-kz-v2-production.up.railway.app/mcp
+Production MCP: https://mcp.ailawyer.kz/mcp
 
 ## Позиционирование
 
@@ -116,10 +116,10 @@ Scenario: пользователь A создал сохраненное дел�
 
 ## Privacy / support / terms
 
-- Website: https://ai-lawyer-kz-v2-production.up.railway.app
-- Support: https://ai-lawyer-kz-v2-production.up.railway.app/support
-- Privacy: https://ai-lawyer-kz-v2-production.up.railway.app/privacy
-- Terms: https://ai-lawyer-kz-v2-production.up.railway.app/terms
+- Website: https://ailawyer.kz
+- Support: https://mcp.ailawyer.kz/support
+- Privacy: https://mcp.ailawyer.kz/privacy
+- Terms: https://mcp.ailawyer.kz/terms
 
 Публичный режим памяти должен работать только через OAuth + пользовательский JWT + Supabase RLS. Внутренний server-key путь используется только для инфраструктурного self-test и не должен быть доступен пользователю.
 
@@ -127,7 +127,7 @@ Scenario: пользователь A создал сохраненное дел�
 
 Сервер поддерживает `/.well-known/openai-apps-challenge`. Перед подачей значение, выданное submission portal, задается переменной `OPENAI_APPS_CHALLENGE_TOKEN`; endpoint возвращает только этот токен.
 
-## Release notes 0.8.0
+## Release notes 0.9.0
 
 - добавлены обязательные MCP tool annotations;
 - добавлена пользовательская изоляция памяти через OAuth/RLS-контур;
