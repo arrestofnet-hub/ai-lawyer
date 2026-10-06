@@ -9,7 +9,7 @@ const MEMORY_URL = process.env.SUPABASE_MEMORY_URL;
 const MEMORY_API_KEY = process.env.SUPABASE_MEMORY_API_KEY;
 const SUPABASE_URL = (process.env.SUPABASE_URL || "https://xfpjxnnuvxmescjbndxo.supabase.co").replace(/\/$/, "");
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
-const PUBLIC_OAUTH_ENABLED = process.env.MCP_PUBLIC_OAUTH_ENABLED === "true";
+const PUBLIC_OAUTH_ENABLED = false; // 0.9.0 public release: memory/OAuth tools are intentionally disabled
 const OAUTH_ISSUER_URL = process.env.OAUTH_ISSUER_URL || `${SUPABASE_URL}/auth/v1`;
 const MCP_RESOURCE_URL = (process.env.MCP_RESOURCE_URL || "https://mcp.ailawyer.kz").replace(/\/$/, "");
 const MEMORY_OAUTH_SCOPES = ["email"];
@@ -508,6 +508,7 @@ function createLegalServer(authContext = {}) {
     }
   );
 
+  if (PUBLIC_OAUTH_ENABLED) {
   server.registerTool(
     "case_memory_create",
     {
@@ -880,6 +881,8 @@ function createLegalServer(authContext = {}) {
     }
   );
 
+  }
+
   server.registerTool(
     "contradiction_audit",
     {
@@ -1111,7 +1114,7 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+  if (PUBLIC_OAUTH_ENABLED && req.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" });
     res.end(JSON.stringify({
       resource: MCP_RESOURCE_URL,
