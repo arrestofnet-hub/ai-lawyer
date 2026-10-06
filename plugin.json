@@ -92,7 +92,8 @@
           ]
         },
         "commerce": false,
-        "commerce_description": "This plugin does not sell products or process payments."
+        "commerce_description": "This plugin does not sell products or process payments.",
+        "demo_recording_url": "https://raw.githubusercontent.com/arrestofnet-hub/ai-lawyer/main/docs/AI_Lawyer_Kazakhstan_Demo_For_OpenAI.mp4"
       },
       "publication": {
         "countries": [
