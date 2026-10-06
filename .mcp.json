@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "ai-lawyer-kz": {
-      "url": "https://ai-lawyer-kz-v2-production.up.railway.app/mcp",
+      "url": "https://mcp.ailawyer.kz/mcp",
       "type": "http"
     }
   }
