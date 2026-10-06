@@ -15,6 +15,9 @@ on:
       - "TERMS.md"
       - ".github/workflows/package.yml"
 
+permissions:
+  contents: write
+
 jobs:
   package:
     runs-on: ubuntu-latest
@@ -25,24 +28,38 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf dist
-          mkdir -p dist/package/.codex-plugin dist/package/skills/kz-legal dist/package/assets
+          mkdir -p dist/package/.codex-plugin dist/package/skills/kz-legal dist/package/assets submission
           cp plugin.json mcp.json .mcp.json dist/package/
           cp .codex-plugin/plugin.json dist/package/.codex-plugin/plugin.json
-          cp skills/kz-legal/SKILL.md dist/package/skills/kz-legal/SKILL.md
+          cp -R skills/kz-legal/. dist/package/skills/kz-legal/
           cp assets/logo.svg assets/composer.svg dist/package/assets/
           cp PRIVACY.md TERMS.md dist/package/
           (
             cd dist/package
-            zip -r ../ai-lawyer-kz-plugin-0.8.0.zip .
+            zip -r ../ai-lawyer-plugin-0.9.0.zip .
           )
-          unzip -l dist/ai-lawyer-kz-plugin-0.8.0.zip
-          if unzip -l dist/ai-lawyer-kz-plugin-0.8.0.zip | grep -E 'server\.js|SUPABASE|\.github|scripts/'; then
+          unzip -l dist/ai-lawyer-plugin-0.9.0.zip
+          if unzip -l dist/ai-lawyer-plugin-0.9.0.zip | grep -E 'server\.js|SUPABASE|\.github|scripts/'; then
             echo "Unexpected runtime/internal files in submission ZIP"
             exit 1
           fi
+          cp dist/ai-lawyer-plugin-0.9.0.zip submission/ai-lawyer-plugin-0.9.0.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: ai-lawyer-kz-plugin-0.8.0
-          path: dist/ai-lawyer-kz-plugin-0.8.0.zip
+          name: ai-lawyer-plugin-0.9.0
+          path: dist/ai-lawyer-plugin-0.9.0.zip
           if-no-files-found: error
           retention-days: 14
+      - name: Publish submission ZIP to repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add submission/ai-lawyer-plugin-0.9.0.zip
+          if git diff --cached --quiet; then
+            echo "Submission ZIP unchanged"
+          else
+            git commit -m "Refresh OpenAI plugin submission ZIP"
+            git push
+          fi
