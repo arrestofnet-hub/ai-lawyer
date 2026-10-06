@@ -9,7 +9,7 @@ MCP-плагин для ChatGPT/Codex по законодательству Ре
 ```
 ChatGPT / MCP client
         ↓
-Railway MCP server
+Production MCP server
         ↓
 Supabase persistent case memory
         ↓
@@ -48,16 +48,18 @@ AI Юрист должен работать не как справочник, а
 
 ## Развёртывание
 
+Website: `https://ailawyer.kz`
+
 Production:
 
-- Health: `https://ai-lawyer-kz-v2-production.up.railway.app/health`
-- Readiness + persistent memory check: `https://ai-lawyer-kz-v2-production.up.railway.app/ready`
-- MCP: `https://ai-lawyer-kz-v2-production.up.railway.app/mcp`
-- Privacy: `https://ai-lawyer-kz-v2-production.up.railway.app/privacy`
-- Terms: `https://ai-lawyer-kz-v2-production.up.railway.app/terms`
+- Health: `https://mcp.ailawyer.kz/health`
+- Readiness + persistent memory check: `https://mcp.ailawyer.kz/ready`
+- MCP: `https://mcp.ailawyer.kz/mcp`
+- Privacy: `https://mcp.ailawyer.kz/privacy`
+- Terms: `https://mcp.ailawyer.kz/terms`
 
 ## Контроль качества
 
 GitHub Actions smoke-test проверяет внешний production MCP: discovery инструментов, доступ к официальному источнику и реальный цикл записи/чтения постоянной памяти.
 
-Секреты не хранятся в репозитории. Railway получает их через environment variables.
+Секреты не хранятся в репозитории. Production service receives them through environment variables.
