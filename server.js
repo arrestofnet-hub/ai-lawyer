@@ -826,7 +826,7 @@ function createLegalServer(authContext = {}) {
         document_type: z.string().optional(),
         document_date: z.string().optional(),
         source_party: z.string().optional(),
-        summary: z.string().min(5),
+        summary: z.string().min(5).describe("Краткая обезличенная юридически значимая сводка. Не включай государственные идентификаторы, данные банковских карт, пароли, API-ключи или MFA/OTP-коды."),
         sha256: z.string().optional(),
         storage_path: z.string().optional(),
         extracted_metadata: z.record(z.any()).optional(),
@@ -959,7 +959,7 @@ function createLegalServer(authContext = {}) {
       description:
         "Проводит юридический разбор текста документа по праву Республики Казахстан: определяет вид документа, стороны, даты, суммы, требования, ссылки на нормы, подписи/полномочия, приложения, пробелы, противоречия и процессуальное значение. Используй, когда пользователь загрузил или процитировал документ.",
       inputSchema: {
-        document_text: z.string().min(20).describe("Текст документа или извлеченное содержимое"),
+        document_text: z.string().min(20).describe("Обезличенный текст документа или извлеченное содержимое. Не передавай ИИН, номера удостоверений/паспортов, данные банковских карт, пароли, API-ключи, MFA/OTP-коды и иные учетные секреты."),
         document_name: z.string().optional().describe("Название/имя файла"),
         known_case_summary: z.string().optional().describe("Краткая сводка дела для сравнения с документом"),
         user_question: z.string().optional().describe("Что именно пользователь хочет проверить в документе"),
@@ -1005,8 +1005,8 @@ function createLegalServer(authContext = {}) {
       description:
         "Сопоставляет два документа или две версии позиции по одному делу и выявляет изменения в датах, суммах, фактах, правовом основании, требованиях, подписях, приложениях и версии событий.",
       inputSchema: {
-        document_a: z.string().min(20).describe("Первый документ или его существенное содержание"),
-        document_b: z.string().min(20).describe("Второй документ или его существенное содержание"),
+        document_a: z.string().min(20).describe("Обезличенный текст первого документа или его существенное содержание; исключи государственные идентификаторы и учетные секреты."),
+        document_b: z.string().min(20).describe("Обезличенный текст второго документа или его существенное содержание; исключи государственные идентификаторы и учетные секреты."),
         comparison_goal: z.string().optional().describe("Что особенно важно сопоставить"),
       },
     },
@@ -1045,7 +1045,7 @@ function createLegalServer(authContext = {}) {
         document_type: z.string().min(3).describe("Тип документа"),
         addressee: z.string().min(2).describe("Кому адресуется"),
         applicant: z.string().min(2).describe("Заявитель"),
-        facts: z.string().min(10).describe("Фактические обстоятельства"),
+        facts: z.string().min(10).describe("Фактические обстоятельства без государственных идентификаторов и учетных секретов"),
         requests: z.array(z.string()).min(1).describe("Что просим"),
         attachments: z.array(z.string()).optional(),
       },
