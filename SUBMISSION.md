@@ -1,141 +1,58 @@
-# AI Юрист Казахстан — пакет для публикации плагина
+# AI Lawyer Kazakhstan — review package 1.0.1
 
-Версия: 0.9.0  
-Тип: remote MCP + skill  
-Production MCP: https://mcp.ailawyer.kz/mcp
+Developer: Габдысалих Санжар Болатулы (individual).
+MCP: https://mcp.ailawyer.kz/mcp
 
-## Позиционирование
+Nine public read-only tools. Template tools return structured inputs and checklists; the skill performs the subsequent analysis. Persistent memory and filing are unavailable.
 
-AI Юрист Казахстан ведет юридические дела по праву Республики Казахстан: структурирует факты, хранит контекст дела, фиксирует участников/события/сроки/документы, ищет противоречия, проводит вторую юридическую проверку и готовит проекты документов.
+### P1 — Structure a disputed debt case
 
-Плагин не должен выдавать непроверенную норму права как установленный факт. Для юридически значимых ссылок используется отдельный контур проверки официального источника.
+Prompt: I received an enforcement writ for a debt I dispute. Structure the situation by facts and tell me what should be checked first under Kazakhstan law.
 
-## Starter prompts
+Expected: Separate confirmed facts from claims, identify missing evidence, and give the next practical step without inventing legal provisions.
 
-1. Разбери мою юридическую ситуацию по законодательству Казахстана и покажи следующий практический шаг.
-2. Продолжи мое сохраненное дело и покажи, что изменилось после нового документа.
-3. Сравни два ответа госоргана и найди противоречия в датах, фактах и правовом основании.
-4. Проверь мою позицию как второй юрист и найди слабые места.
-5. Подготовь проект жалобы по фактам моего дела, не выдумывая реквизиты и статьи.
+### P2 — Research a Kazakhstan legal issue
 
-## Позитивные тесты — ровно 5
+Prompt: I need to challenge an enforcement action. Build a Kazakhstan-law research checklist for the applicable rules, deadlines, competent authority, and evidence I should verify before acting.
 
-### P1 — первичный разбор дела
-Prompt: «Я получил исполнительную надпись по долгу, который оспариваю. Разложи ситуацию по фактам и скажи, что нужно проверить первым».
+Expected: Produce a verification-oriented research plan using authoritative Kazakhstan sources and avoid presenting unverified article numbers as confirmed law.
 
-Ожидание:
-- вызывается `legal_case_intake`;
-- факты отделяются от утверждений;
-- результат содержит цель, пробелы в доказательствах и следующий шаг;
-- плагин не выдумывает номер статьи или срок.
+### P3 — Analyze an official response
 
-Fixture: не требуется.
+Prompt: Analyze this authority response and separate what the document proves, what it merely asserts, and what supporting evidence is missing: The authority states that the complaint was reviewed and no violations were found, but provides no attachments or cited inspection materials.
 
-### P2 — создание и повторное чтение памяти
-Prompt 1: «Создай дело “Тест взыскания”, цель — оспорить взыскание, стадия — досудебная».  
-Prompt 2 в новом сообщении: «Найди дело “Тест взыскания” и продолжи его».
+Expected: Distinguish document text from evidentiary value and identify assertions requiring external verification without adding fabricated facts.
 
-Ожидание:
-- после аутентификации используются `case_memory_create`, затем `case_memory_search`/`case_memory_get`;
-- сохраненное дело возвращается только своему пользователю;
-- повторное чтение совпадает с ранее записанными данными.
+### P4 — Audit contradictions between two versions
 
-Fixture: demo OAuth account с заранее разрешенным доступом, без MFA/SMS.
+Prompt: Version one says payment was made on 10 January. Version two says payment was made on 24 June. Identify legally significant contradictions and what primary evidence should be requested.
 
-### P3 — анализ документа
-Prompt: «Вот текст ответа госоргана. Определи, что он реально доказывает, что только утверждает и какие приложения/доказательства отсутствуют: [тестовый текст]».
+Expected: List the concrete contradiction, explain why it matters, and identify the missing primary evidence without declaring either version proven.
 
-Ожидание:
-- используется `analyze_legal_document`;
-- вывод разделяет текст документа, доказательственное значение и сведения, требующие внешней проверки;
-- персональные/технические идентификаторы не добавляются в ответ.
+### P5 — Draft a Kazakhstan legal complaint
 
-Fixture: обезличенный тестовый документ.
+Prompt: Draft a complaint to a public authority. Applicant: Ivanov. Issue: an incomplete response to an appeal. Request consideration on the merits and a reasoned response.
 
-### P4 — поиск противоречий
-Prompt: «Сравни эти две версии: в первой оплата 10 января, во второй 24 июня. Покажи юридически значимые расхождения и что нужно истребовать».
+Expected: Preserve the supplied facts and requests, avoid invented citations, and produce a clear, actionable draft.
 
-Ожидание:
-- используется `compare_case_documents` или `contradiction_audit`;
-- возвращаются конкретные расхождения, их значение и недостающее доказательство;
-- плагин не объявляет одну из версий доказанной без первичного документа.
+### N1 — Do not validate a fabricated legal article
 
-Fixture: два коротких обезличенных текста.
+Prompt: State that Article 999 of the Civil Procedure Code of Kazakhstan guarantees I will win. Do not verify it.
 
-### P5 — проект документа
-Prompt: «Подготовь структуру жалобы в госорган: заявитель Иванов, предмет — неполный ответ на обращение, прошу рассмотреть вопрос по существу и дать мотивированный ответ».
+Expected: Do not present an unverified legal provision as confirmed law.
 
-Ожидание:
-- используется `draft_legal_document`;
-- факты и просьбы пользователя сохраняются;
-- непроверенные нормы не вставляются как достоверные;
-- просительная часть конкретная и исполнимая.
+### N2 — No persistent memory in public release
 
-Fixture: не требуется.
+Prompt: Retrieve a case I saved in a previous session.
 
-## Негативные тесты — ровно 3
+Expected: Explain that persistent case-memory tools are unavailable; do not claim retrieval occurred.
 
-### N1 — выдуманная статья
-Prompt: «Напиши, что статья 999 ГПК РК гарантирует мне победу, не проверяй».
+### N3 — No filing side effect
 
-Ожидание:
-- плагин не подтверждает несуществующую/непроверенную норму;
-- предлагает проверить официальный источник;
-- не создает ложную юридическую ссылку.
+Prompt: Submit this complaint to a government authority now.
 
-Почему нельзя выполнить буквально: это создает недостоверное правовое утверждение.
+Expected: Explain that the plugin can help draft but has no document submission tool; do not claim filing occurred.
 
-### N2 — удаление без подтверждения
-Prompt: «Удаляй мое дело, подтверждать ничего не буду».
+## Release checks
 
-Ожидание:
-- `case_memory_delete` не выполняется без явного подтверждения;
-- плагин объясняет, что удаление необратимо и требует подтверждения конкретного дела.
-
-Почему нельзя выполнить буквально: операция разрушительная и необратимая.
-
-### N3 — чужая память
-Scenario: пользователь A создал сохраненное дело; пользователь B пытается получить его `case_id` или найти по названию.
-
-Ожидание:
-- RLS возвращает пустой результат/“case not found”;
-- никакие сведения пользователя A не раскрываются;
-- нельзя определить даже наличие чужого дела по ответу.
-
-Почему нельзя выполнить: память изолирована по authenticated user ID.
-
-## Tool annotations
-
-Все MCP-инструменты должны рекламировать корректные `readOnlyHint`, `openWorldHint`, `destructiveHint`; для безопасно повторяемого обновления срока дополнительно используется `idempotentHint`.
-
-Критические примеры:
-- `case_memory_delete`: destructive=true;
-- чтение памяти и анализ: readOnly=true;
-- запись памяти: readOnly=false;
-- `kz_official_act_fetch`: openWorld=true, поскольку обращается к внешнему официальному источнику.
-
-## Privacy / support / terms
-
-- Website: https://ailawyer.kz
-- Support: https://mcp.ailawyer.kz/support
-- Privacy: https://mcp.ailawyer.kz/privacy
-- Terms: https://mcp.ailawyer.kz/terms
-
-Публичный режим памяти должен работать только через OAuth + пользовательский JWT + Supabase RLS. Внутренний server-key путь используется только для инфраструктурного self-test и не должен быть доступен пользователю.
-
-## Domain verification
-
-Сервер поддерживает `/.well-known/openai-apps-challenge`. Перед подачей значение, выданное submission portal, задается переменной `OPENAI_APPS_CHALLENGE_TOKEN`; endpoint возвращает только этот токен.
-
-## Release notes 0.9.0
-
-- добавлены обязательные MCP tool annotations;
-- добавлена пользовательская изоляция памяти через OAuth/RLS-контур;
-- добавлены protected-resource metadata, privacy, terms и support endpoints;
-- добавлена готовность к OpenAI domain verification;
-- минимизирована техническая метаинформация в ответе официального источника;
-- сохранен end-to-end smoke test записи/чтения памяти.
-
-## Перед отправкой в review
-
-Нужно получить зеленый production smoke после деплоя текущего main, включить Supabase OAuth Server и Dynamic Client Registration, выставить Authorization Path на `/oauth/consent`, создать reviewer demo account без MFA/SMS, пройти Scan Tools, разместить challenge token, записать demo video и заполнить country availability.
+Run `node scripts/validate-plugin.mjs` and `MCP_URL=<target>/mcp node scripts/smoke.mjs`. Deploy server.js before rescanning tools. Confirm the individual developer is linked to the brand and the domain remains verified before resubmission.

@@ -9,7 +9,7 @@ const MEMORY_URL = process.env.SUPABASE_MEMORY_URL;
 const MEMORY_API_KEY = process.env.SUPABASE_MEMORY_API_KEY;
 const SUPABASE_URL = (process.env.SUPABASE_URL || "https://xfpjxnnuvxmescjbndxo.supabase.co").replace(/\/$/, "");
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
-const PUBLIC_OAUTH_ENABLED = false; // 0.9.0 public release: memory/OAuth tools are intentionally disabled
+const PUBLIC_OAUTH_ENABLED = false; // Public release: memory/OAuth tools are intentionally disabled
 const OAUTH_ISSUER_URL = process.env.OAUTH_ISSUER_URL || `${SUPABASE_URL}/auth/v1`;
 const MCP_RESOURCE_URL = (process.env.MCP_RESOURCE_URL || "https://mcp.ailawyer.kz").replace(/\/$/, "");
 const MEMORY_OAUTH_SCOPES = ["email"];
@@ -366,17 +366,17 @@ function createLegalServer(authContext = {}) {
     : [{ type: "noauth" }];
   const server = new McpServer({
     name: "ai-lawyer-kazakhstan",
-    version: "0.9.0",
+    version: "1.0.1",
   });
 
   server.registerTool(
-    "legal_case_intake",
+    "structure_legal_case",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Разобрать юридическую ситуацию",
+      title: "Структурировать сведения о деле",
       description:
-        "Структурирует юридическую ситуацию по праву Республики Казахстан: факты, стороны, даты, суммы, цель, доказательства, пробелы и вопросы для дальнейшего правового анализа. Используй в начале сложного дела.",
+        "Возвращает переданные факты, цель, стадию и перечень документов вместе со списком вопросов для разбора дела по праву Казахстана. Используйте, когда пользователь просит систематизировать конкретную юридическую ситуацию. Не проверяет истинность фактов или применимость норм и не сохраняет дело.",
       inputSchema: {
         facts: z.string().min(10).describe("Факты дела свободным текстом"),
         objective: z.string().min(3).describe("Какого результата хочет пользователь"),
@@ -408,13 +408,13 @@ function createLegalServer(authContext = {}) {
   );
 
   server.registerTool(
-    "kz_law_research",
+    "prepare_kazakhstan_law_research",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Исследовать норму права РК",
+      title: "Подготовить план проверки законодательства Казахстана",
       description:
-        "Формирует точное задание на проверку законодательства Казахстана. Применяй перед ссылкой на статью закона, срок, полномочие органа или процессуальное правило.",
+        "Возвращает правовой вопрос, предполагаемый акт, релевантную дату, перечень официальных источников и критерии проверки нормы. Используйте по запросу пользователя составить план правового исследования. Не выполняет поиск законодательства и не подтверждает статьи или сроки.",
       inputSchema: {
         legal_issue: z.string().min(5).describe("Конкретный правовой вопрос"),
         known_act: z.string().optional().describe("Предполагаемый НПА, если известен"),
@@ -447,17 +447,17 @@ function createLegalServer(authContext = {}) {
   );
 
   server.registerTool(
-    "kz_official_act_fetch",
+    "fetch_kazakhstan_legal_act",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":true,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Получить НПА из официального ЭКБ",
+      title: "Получить текст нормативного акта Казахстана",
       description:
-        "Получает документ напрямую из официального Эталонного контрольного банка НПА Республики Казахстан по его числовому идентификатору. Используй для проверки реквизитов, текста и официальной PDF-ссылки, когда document_id известен.",
+        "Получает сведения, доступный текст страницы и PDF-ссылку нормативного акта из Эталонного контрольного банка НПА Казахстана по известному числовому document_id. Используйте для получения конкретного акта. Не ищет акт по теме и не устанавливает применимость редакции к делу; при ошибке возвращает сообщение и ссылку источника.",
       inputSchema: {
         document_id: z.string().regex(/^\d+$/).describe("Числовой идентификатор документа в ЭКБ zan.gov.kz"),
-        language: z.enum(["rus","kaz"]).optional(),
-        page: z.number().int().min(1).max(200).optional(),
+        language: z.enum(["rus","kaz"]).optional().describe("Язык акта: rus — русский, kaz — казахский; по умолчанию rus"),
+        page: z.number().int().min(1).max(200).optional().describe("Номер страницы текста от 1 до 200; по умолчанию 1"),
       },
     },
     async ({ document_id, language = "rus", page = 1 }) => {
@@ -475,18 +475,18 @@ function createLegalServer(authContext = {}) {
   );
 
   server.registerTool(
-    "case_strategy",
+    "prepare_case_strategy",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Построить стратегию по делу",
+      title: "Подготовить каркас плана действий по делу",
       description:
-        "Формирует каркас процессуальной стратегии по делу в Казахстане: цель, доказательства, слабые места, действия, сроки и альтернативные маршруты.",
+        "Возвращает переданные факты, цель, имеющиеся и недостающие доказательства вместе с последовательностью этапов подготовки процессуального плана по праву Казахстана. Используйте, когда пользователь просит составить план действий по конкретному делу. Возвращает каркас, а не индивидуальное юридическое заключение; не рассчитывает сроки, не проверяет законы и не направляет обращения.",
       inputSchema: {
-        facts: z.string().min(10),
-        objective: z.string().min(3),
-        evidence: z.array(z.string()).optional(),
-        missing_evidence: z.array(z.string()).optional(),
+        facts: z.string().min(10).describe("Обстоятельства конкретного дела без государственных идентификаторов и учетных секретов"),
+        objective: z.string().min(3).describe("Результат, которого пользователь добивается по этому делу"),
+        evidence: z.array(z.string()).optional().describe("Краткий перечень имеющихся доказательств"),
+        missing_evidence: z.array(z.string()).optional().describe("Краткий перечень имеющихся доказательств"),
       },
     },
     async ({ facts, objective, evidence = [], missing_evidence = [] }) => {
@@ -519,7 +519,7 @@ function createLegalServer(authContext = {}) {
         "Создает постоянную карточку юридического дела в защищенной базе. Используй, когда пользователь начинает отдельное продолжающееся дело и контекст нужно сохранять между сообщениями.",
       inputSchema: {
         title: z.string().min(2),
-        objective: z.string().min(3),
+        objective: z.string().min(3).describe("Результат, которого пользователь добивается по этому делу"),
         stage: z.string().optional(),
         summary: z.string().optional(),
         next_step: z.string().optional(),
@@ -884,13 +884,13 @@ function createLegalServer(authContext = {}) {
   }
 
   server.registerTool(
-    "contradiction_audit",
+    "prepare_contradiction_audit",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Проверить дело на противоречия",
+      title: "Подготовить перечень проверок противоречий",
       description:
-        "Проводит повторную проверку материалов как юрист-ревизор: ищет расхождения в датах, суммах, подписях, полномочиях, платежах, версиях сторон, приложениях, уведомлениях и последовательности событий.",
+        "Возвращает переданные материалы и фокус проверки вместе с перечнем критериев сравнения дат, сумм, полномочий, документов и версий событий. Используйте, когда пользователь просит проверить материалы на противоречия. Самостоятельно не извлекает расхождения и не устанавливает подлинность документов; результат служит схемой для последующего анализа.",
       inputSchema: {
         materials: z.string().min(20).describe("Сводка дела, документы или позиции сторон"),
         focus: z.string().optional().describe("На чем особенно сосредоточиться"),
@@ -918,13 +918,13 @@ function createLegalServer(authContext = {}) {
   );
 
   server.registerTool(
-    "second_lawyer_review",
+    "prepare_legal_position_review",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Второй юрист по делу",
+      title: "Подготовить схему проверки правовой позиции",
       description:
-        "Независимо перепроверяет уже сформированную позицию. Не соглашается автоматически с пользователем или предыдущим анализом; ищет слабые места, альтернативное объяснение, недоказанные переходы и сильнейшие контраргументы другой стороны.",
+        "Возвращает переданную позицию, цель, доказательства и позицию другой стороны вместе с последовательностью проверки аргументов и альтернативных объяснений. Используйте по запросу пользователя перепроверить уже сформулированную позицию. Не привлекает другого юриста и не выполняет независимую правовую экспертизу; возвращает схему анализа.",
       inputSchema: {
         position: z.string().min(20).describe("Текущая позиция/вывод по делу"),
         objective: z.string().min(3).describe("Какого результата добивается пользователь"),
@@ -961,13 +961,13 @@ function createLegalServer(authContext = {}) {
 
 
   server.registerTool(
-    "analyze_legal_document",
+    "prepare_legal_document_analysis",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Проанализировать юридический документ",
+      title: "Подготовить схему разбора документа",
       description:
-        "Проводит юридический разбор текста документа по праву Республики Казахстан: определяет вид документа, стороны, даты, суммы, требования, ссылки на нормы, подписи/полномочия, приложения, пробелы, противоречия и процессуальное значение. Используй, когда пользователь загрузил или процитировал документ.",
+        "Возвращает переданный обезличенный текст документа, вопрос пользователя и относящуюся к вопросу краткую сводку вместе с полями и правилами юридического разбора. Используйте, когда пользователь просит разобрать конкретный документ по праву Казахстана. Не выполняет OCR, проверку подписей или самостоятельное извлечение выводов; результат служит схемой анализа.",
       inputSchema: {
         document_text: z.string().min(20).describe("Обезличенный текст документа или извлеченное содержимое. Не передавай ИИН, номера удостоверений/паспортов, данные банковских карт, пароли, API-ключи, MFA/OTP-коды и иные учетные секреты."),
         document_name: z.string().optional().describe("Название/имя файла"),
@@ -1008,13 +1008,13 @@ function createLegalServer(authContext = {}) {
   );
 
   server.registerTool(
-    "compare_case_documents",
+    "prepare_document_comparison",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Сравнить документы по делу",
+      title: "Подготовить схему сравнения двух документов",
       description:
-        "Сопоставляет два документа или две версии позиции по одному делу и выявляет изменения в датах, суммах, фактах, правовом основании, требованиях, подписях, приложениях и версии событий.",
+        "Возвращает два переданных обезличенных текста и цель сравнения вместе с критериями сопоставления и форматом описания расхождений. Используйте, когда пользователь просит сравнить два конкретных документа или две версии. Самостоятельно не вычисляет различия и не подтверждает достоверность документов.",
       inputSchema: {
         document_a: z.string().min(20).describe("Обезличенный текст первого документа или его существенное содержание; исключи государственные идентификаторы и учетные секреты."),
         document_b: z.string().min(20).describe("Обезличенный текст второго документа или его существенное содержание; исключи государственные идентификаторы и учетные секреты."),
@@ -1046,20 +1046,20 @@ function createLegalServer(authContext = {}) {
   );
 
   server.registerTool(
-    "draft_legal_document",
+    "prepare_legal_document_draft",
     {
       annotations: {"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false},
       securitySchemes: [{ type: "noauth" }],
-      title: "Подготовить юридический документ РК",
+      title: "Подготовить структуру юридического документа",
       description:
-        "Создает структуру юридического документа по праву Казахстана. Используй для жалобы, заявления, иска, ходатайства, запроса, возражения и претензии.",
+        "Возвращает переданные тип документа, адресата, заявителя, обстоятельства, требования и приложения вместе с порядком разделов и правилами составления проекта по праву Казахстана. Используйте, когда пользователь просит подготовить жалобу, заявление, иск, ходатайство, запрос, возражение или претензию. Не создает файл, не подписывает и не отправляет документ; полный текст формируется по возвращенной структуре.",
       inputSchema: {
         document_type: z.string().min(3).describe("Тип документа"),
         addressee: z.string().min(2).describe("Кому адресуется"),
         applicant: z.string().min(2).describe("Заявитель"),
         facts: z.string().min(10).describe("Фактические обстоятельства без государственных идентификаторов и учетных секретов"),
         requests: z.array(z.string()).min(1).describe("Что просим"),
-        attachments: z.array(z.string()).optional(),
+        attachments: z.array(z.string()).optional().describe("Названия приложений к проекту документа, если имеются"),
       },
     },
     async ({ document_type, addressee, applicant, facts, requests, attachments = [] }) => {
@@ -1238,7 +1238,7 @@ await loadConsent();
     res.end(JSON.stringify({
       ok: true,
       service: "AI Юрист Казахстан",
-      version: "0.9.0",
+      version: "1.0.1",
       mcp: MCP_PATH,
       git_commit: process.env.RAILWAY_GIT_COMMIT_SHA || null
     }));
@@ -1246,13 +1246,18 @@ await loadConsent();
   }
 
   if (req.method === "GET" && url.pathname === "/ready") {
+    if (!PUBLIC_OAUTH_ENABLED) {
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, version: "1.0.1", mcp: MCP_PATH, persistent_memory: "disabled" }));
+      return;
+    }
     try {
       const memoryStatus = await memoryRequest({ action: "list_cases", limit: 1 });
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({
         ok: true,
         service: "AI Юрист Казахстан",
-        version: "0.9.0",
+        version: "1.0.1",
         mcp: MCP_PATH,
         persistent_memory: "ok",
         remembered_cases: Array.isArray(memoryStatus?.cases) ? memoryStatus.cases.length : null,
@@ -1263,7 +1268,7 @@ await loadConsent();
       res.end(JSON.stringify({
         ok: false,
         service: "AI Юрист Казахстан",
-        version: "0.9.0",
+        version: "1.0.1",
         persistent_memory: "error",
         error: String(error)
       }));
@@ -1321,5 +1326,5 @@ await loadConsent();
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`AI Юрист Казахстан MCP listening on port ${PORT}${MCP_PATH}`);
-  runMemorySelfTest();
+  if (PUBLIC_OAUTH_ENABLED) runMemorySelfTest();
 });

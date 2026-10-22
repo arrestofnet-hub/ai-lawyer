@@ -11,7 +11,7 @@ for (const [name, version] of [
   [".codex-plugin/plugin.json", codex.version],
   ["package.json", pkg.version],
 ]) {
-  if (version !== "0.8.0") throw new Error(`${name}: expected version 0.8.0, got ${version}`);
+  if (version !== "1.0.1") throw new Error(`${name}: expected version 1.0.1, got ${version}`);
 }
 
 const shortDescription = plugin.extensions?.["com.openai"]?.interface?.shortDescription ?? "";
