@@ -1248,7 +1248,13 @@ await loadConsent();
   if (req.method === "GET" && url.pathname === "/ready") {
     if (!PUBLIC_OAUTH_ENABLED) {
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ ok: true, version: "1.0.1", mcp: MCP_PATH, persistent_memory: "disabled" }));
+      res.end(JSON.stringify({
+        ok: true,
+        version: "1.0.1",
+        mcp: MCP_PATH,
+        persistent_memory: "disabled",
+        git_commit: process.env.RAILWAY_GIT_COMMIT_SHA || null
+      }));
       return;
     }
     try {

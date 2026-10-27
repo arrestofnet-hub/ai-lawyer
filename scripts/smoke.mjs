@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 const endpoint = process.env.MCP_URL || 'https://mcp.ailawyer.kz/mcp';
-const client = new Client({name:'ai-lawyer-kz-smoke',version:'1.0.1'});
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const client = new Client({name:'ai-lawyer-kz-smoke',version});
 const fixtures = {
  structure_legal_case:{facts:'Test payment date differs between two supplied letters.',objective:'Compare payment evidence'},
  prepare_kazakhstan_law_research:{legal_issue:'Check rules for a reasoned administrative response'},
@@ -15,9 +17,10 @@ const fixtures = {
 };
 try {
  await client.connect(new StreamableHTTPClientTransport(new URL(endpoint)));
+ assert.equal(client.getServerVersion()?.version,version,`MCP at ${endpoint} must serve release ${version}; check deployment before changing tool names`);
  const {tools}=await client.listTools();
  const expected=[...Object.keys(fixtures),'fetch_kazakhstan_legal_act'].sort();
- assert.deepEqual(tools.map(t=>t.name).sort(),expected,'Public tools must match the listing');
+ assert.deepEqual(tools.map(t=>t.name).sort(),expected,'Public tools must match the 1.0.1 listing; legacy names indicate an outdated deployment');
  for(const tool of tools){
   for(const flag of ['readOnlyHint','destructiveHint','openWorldHint']) assert.equal(typeof tool.annotations?.[flag],'boolean',`${tool.name}: ${flag}`);
   assert.equal(tool.annotations.readOnlyHint,true);
