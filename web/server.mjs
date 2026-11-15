@@ -16,6 +16,7 @@ const ORIGIN = String(process.env.PUBLIC_ORIGIN || "http://localhost:" + PORT).r
 const KEY = dataKey(process.env.DATA_KEY);
 const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data"), KEY);
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
+const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
 const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
 const DAILY_LIMIT = Math.max(1, Number(process.env.MAX_MESSAGES_PER_DAY || 25));
@@ -115,7 +116,7 @@ async function askModel(payload) {
 function baseRequest(caseData, history, message, docs, mode) {
   const input = buildMessages(history, message, docs, { ...caseData, mode });
   return {
-    model:MODEL, store:false, instructions:strategyInstruction(strategy,mode),
+    model:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" + playbooks,mode),
     reasoning:{ effort:"medium" }, max_output_tokens:6500,
     ...(SEARCH_ENABLED ? { tools:[{ type:"web_search", search_context_size:"medium", filters:{ allowed_domains:["adilet.zan.kz","zan.gov.kz","gov.kz","sud.gov.kz","egov.kz"] } }] } : {}),
     input,
