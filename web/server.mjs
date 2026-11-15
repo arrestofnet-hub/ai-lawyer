@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import net from "node:net";
 import { fileURLToPath } from "node:url";
 import {
   Store, MAX_FILE_BYTES, MAX_MESSAGE_CHARS, MAX_CASES_PER_USER, MAX_DOCS_PER_CASE,
@@ -77,7 +78,10 @@ function newSession(user, res) {
 }
 function safeUser(u) { return { id:u.id, email:u.email }; }
 function rateLimit(req, bucket, limit, ms) {
-  const ip = req.socket.remoteAddress || "?"; // do not trust spoofable forwarded headers
+  const remote = req.socket.remoteAddress || "?";
+  const forwarded = String(req.headers["x-real-ip"] || "");
+  // Trust X-Real-IP only from a local Nginx proxy configured to overwrite this header.
+  const ip = (["127.0.0.1","::1","::ffff:127.0.0.1"].includes(remote) && net.isIP(forwarded)) ? forwarded : remote;
   const k = bucket + "|" + ip, entry = throttle.get(k) || { count:0, reset:0 };
   if (entry.reset < Date.now()) { entry.count = 0; entry.reset = Date.now() + ms; }
   entry.count++; throttle.set(k,entry);
