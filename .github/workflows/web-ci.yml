@@ -1,0 +1,23 @@
+name: Standalone web checks
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/web-ci.yml"
+  push:
+    branches: ["feature/standalone-legal-web-v1"]
+    paths:
+      - "web/**"
+      - ".github/workflows/web-ci.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: cd web && npm run check
+      - name: Unit tests
+        run: cd web && npm test
