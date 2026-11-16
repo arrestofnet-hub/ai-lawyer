@@ -397,12 +397,17 @@ const server=http.createServer(async(req,res)=>{
       rateLimit(req,"google-start",20,15*60000);
       const link=url.searchParams.get("link")==="1";
       const user=link?requireUser(req):null;
+      const referralCode=link?"":normalizeReferral(url.searchParams.get("ref"));
+      if(referralCode===null)fail(400,"Некорректный партнёрский код");
+      if(referralCode&&!campaignByCode(store.db,referralCode))
+        fail(400,"Партнёрский код недействителен или лимит исчерпан");
       const raw=cookies(req).al_session;
       const linkedSession=user?store.db.sessions.find(x=>x.userId===user.id&&x.hash===tokenHash(raw)):null;
       const flow=googleStart({
         origin:ORIGIN,key:KEY,
         remember:link?linkedSession?.remember===true:url.searchParams.get("remember")==="1",
-        linkUserId:user?.id||null,linkSessionHash:user?tokenHash(raw):null
+        linkUserId:user?.id||null,linkSessionHash:user?tokenHash(raw):null,
+        referralCode,referralSource:safeSource(url.searchParams.get("src"))
       });
       res.writeHead(302,{"location":flow.url,"set-cookie":flow.cookie,"cache-control":"no-store"});
       return res.end();
@@ -437,8 +442,11 @@ const server=http.createServer(async(req,res)=>{
               return res.end();
             }
             if(process.env.GOOGLE_SIGNUP_ENABLED!=="1")throw Error("New Google registration not enabled");
+            const grant=allocateVerifiedRegistration(store.db,flow.referralCode);
             user={id:randomId(),email:identity.email,pass:null,googleSub:identity.sub,
-              emailVerified:true,createdAt:now()};
+              emailVerified:true,createdAt:now(),credits:grant.credits,
+              accountType:"trial",referralCode:grant.referralCode,
+              referralSource:flow.referralSource||null};
             store.db.users.push(user);store.save();
           }
         }
