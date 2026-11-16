@@ -6,6 +6,10 @@ import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { exportDocx, exportPdf } from "./export.mjs";
 import {
+  googleEnabled, mailEnabled, googleStart, googleIdentity, verifyGoogleCookie, clearGoogleCookie,
+  newEmailCode, emailCodeHash, emailCodeMatches, sendVerificationCode
+} from "./auth.mjs";
+import {
   Store, MAX_FILE_BYTES, MAX_MESSAGE_CHARS, MAX_CASES_PER_USER, MAX_DOCS_PER_CASE,
   validateEmail, validPassword, hashPassword, checkPassword, tokenHash, dataKey,
   randomId, classifyFile, extractOutput, buildMessages, strategyInstruction,
@@ -70,16 +74,19 @@ function sessionFor(req) {
 function requireUser(req) { const u = sessionFor(req); if (!u) fail(401,"Требуется вход"); return u; }
 function sessionCookie(token, maxAge) {
   const secure = ORIGIN.startsWith("https:") ? "; Secure" : "";
-  return `al_session=${token}; HttpOnly; SameSite=Strict; Path=/chat/; Max-Age=${maxAge}${secure}`;
+  return `al_session=${token}; HttpOnly; SameSite=Lax; Path=/chat/${Number.isInteger(maxAge)?"; Max-Age="+maxAge:""}${secure}`;
 }
-function newSession(user, res) {
-  const token = crypto.randomBytes(32).toString("hex"), expiresAt = Date.now() + 7 * 86400000;
-  store.db.sessions.push({ hash:tokenHash(token), userId:user.id, expiresAt });
-  store.db.sessions = store.db.sessions.filter(s => s.expiresAt > Date.now());
+function newSession(user,res,remember=false) {
+  const days=remember?30:1;
+  const token=crypto.randomBytes(32).toString("hex");
+  store.db.sessions.push({hash:tokenHash(token),userId:user.id,expiresAt:Date.now()+days*86400000});
+  store.db.sessions=store.db.sessions.filter(x=>x.expiresAt>Date.now());
   store.save();
-  res.setHeader("set-cookie", sessionCookie(token, 7 * 86400));
+  // A persistent 30-day login is issued only after an explicit Remember me choice.
+  // Without it this is a browser-session cookie, with a 24-hour server-side expiry.
+  res.setHeader("set-cookie",sessionCookie(token,remember?30*86400:undefined));
 }
-function safeUser(u) { return { id:u.id, email:u.email }; }
+function safeUser(u) { return { id:u.id,email:u.email,googleLinked:!!u.googleSub }; }
 function rateLimit(req, bucket, limit, ms) {
   const remote = req.socket.remoteAddress || "?";
   const forwarded = String(req.headers["x-real-ip"] || "");
@@ -139,7 +146,12 @@ async function api(req,res,url) {
   const p = url.pathname;
   if (req.method === "GET" && p === "/chat/api/session") {
     const user = sessionFor(req);
-    return json(res,200,{ authenticated:!!user, user:user?safeUser(user):null, configured:!!process.env.OPENAI_API_KEY, dailyLimit:DAILY_LIMIT });
+    return json(res,200,{
+      authenticated:!!user,user:user?safeUser(user):null,
+      configured:!!process.env.OPENAI_API_KEY,dailyLimit:DAILY_LIMIT,
+      signupMode:mailEnabled()?"email":process.env.SIGNUP_INVITE_CODE?"invite":"disabled",
+      googleEnabled:googleEnabled()
+    });
   }
   if (req.method === "POST" && p === "/chat/api/auth/register") {
     rateLimit(req,"auth",8,15*60000);
@@ -148,7 +160,42 @@ async function api(req,res,url) {
     if (!email || !validPassword(b.password)) fail(400,"Нужны корректная почта и пароль не короче 12 символов");
     if (store.db.users.some(u=>u.email===email)) fail(409,"Адрес уже зарегистрирован");
     const u={id:randomId(), email, pass:hashPassword(b.password), createdAt:now()};
-    store.db.users.push(u); store.save(); newSession(u,res);
+    store.db.users.push(u); store.save(); newSession(u,res,b.remember===true);
+    return json(res,201,{user:safeUser(u)});
+  }
+  if (req.method === "POST" && p === "/chat/api/auth/email-start") {
+    if(!mailEnabled())fail(503,"Для свободной регистрации нужно подключить отправку писем SMTP");
+    rateLimit(req,"email-start",3,60*60000);
+    const b=await bodyJson(req),email=validateEmail(b.email);
+    if(!email||!validPassword(b.password))fail(400,"Проверьте email и пароль (минимум 12 символов)");
+    if(store.db.users.some(u=>u.email===email))fail(409,"Этот адрес уже зарегистрирован");
+    const code=newEmailCode();
+    const pending={email,pass:hashPassword(b.password),codeHash:emailCodeHash(email,code,KEY),
+      expiresAt:Date.now()+15*60000,attempts:0,remember:b.remember===true};
+    store.db.pendingSignups=(store.db.pendingSignups||[]).filter(x=>x.expiresAt>Date.now()&&x.email!==email);
+    if(store.db.pendingSignups.length>=1000)fail(429,"Регистрация временно ограничена");
+    store.db.pendingSignups.push(pending);store.save();
+    try{await sendVerificationCode(email,code);}
+    catch{
+      store.db.pendingSignups=store.db.pendingSignups.filter(x=>x!==pending);store.save();
+      fail(503,"Не удалось отправить письмо. Повторите позднее");
+    }
+    return json(res,200,{verificationRequired:true,expiresMinutes:15});
+  }
+  if (req.method === "POST" && p === "/chat/api/auth/email-verify") {
+    rateLimit(req,"email-verify",10,15*60000);
+    const b=await bodyJson(req),email=validateEmail(b.email);
+    if(!email)fail(400,"Некорректный email");
+    const pending=(store.db.pendingSignups||[]).find(x=>x.email===email&&x.expiresAt>Date.now());
+    if(!pending)fail(400,"Код отсутствует или истёк. Запросите новый");
+    pending.attempts++;
+    const success=pending.attempts<=5&&emailCodeMatches(email,b.code,pending.codeHash,KEY);
+    if(pending.attempts>=5||success)store.db.pendingSignups=store.db.pendingSignups.filter(x=>x!==pending);
+    store.save();
+    if(!success)fail(400,"Неверный код подтверждения");
+    if(store.db.users.some(u=>u.email===email))fail(409,"Этот адрес уже зарегистрирован");
+    const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now()};
+    store.db.users.push(u);store.save();newSession(u,res,pending.remember);
     return json(res,201,{user:safeUser(u)});
   }
   if (req.method === "POST" && p === "/chat/api/auth/login") {
@@ -156,7 +203,7 @@ async function api(req,res,url) {
     const b=await bodyJson(req), email=validateEmail(b.email);
     const user=store.db.users.find(u=>u.email===email);
     if (!user || !checkPassword(String(b.password||""),user.pass)) fail(401,"Неверная почта или пароль");
-    newSession(user,res);
+    newSession(user,res,b.remember===true);
     return json(res,200,{user:safeUser(user)});
   }
   if (req.method === "POST" && p === "/chat/api/auth/logout") {
@@ -292,6 +339,65 @@ const server=http.createServer(async(req,res)=>{
     }
     if(req.method==="GET" && url.pathname==="/chat/health"){
       return json(res,200,{ok:true,configured:!!process.env.OPENAI_API_KEY});
+    }
+    if(req.method==="GET"&&url.pathname==="/chat/auth/google/start"){
+      if(!googleEnabled())fail(503,"Вход через Google пока не подключён");
+      rateLimit(req,"google-start",20,15*60000);
+      const link=url.searchParams.get("link")==="1";
+      const user=link?requireUser(req):null;
+      const raw=cookies(req).al_session;
+      const flow=googleStart({
+        origin:ORIGIN,key:KEY,remember:url.searchParams.get("remember")==="1",
+        linkUserId:user?.id||null,linkSessionHash:user?tokenHash(raw):null
+      });
+      res.writeHead(302,{"location":flow.url,"set-cookie":flow.cookie,"cache-control":"no-store"});
+      return res.end();
+    }
+    if(req.method==="GET"&&url.pathname==="/chat/auth/google/callback"){
+      if(!googleEnabled())fail(503,"Вход через Google пока не подключён");
+      try{
+        const flow=verifyGoogleCookie(cookies(req).al_google_state,KEY);
+        const state=url.searchParams.get("state");
+        if(!state||state.length!==flow.state.length||
+           !crypto.timingSafeEqual(Buffer.from(state),Buffer.from(flow.state)))
+          throw Error("OAuth state mismatch");
+        if(url.searchParams.has("error"))throw Error("Google authentication declined");
+        const identity=await googleIdentity(url.searchParams.get("code"),flow,ORIGIN);
+        let user;
+        if(flow.linkUserId){
+          const validSession=store.db.sessions.some(x=>x.userId===flow.linkUserId&&
+            x.hash===flow.linkSessionHash&&x.expiresAt>Date.now());
+          if(!validSession)throw Error("Link session expired");
+          user=store.db.users.find(x=>x.id===flow.linkUserId);
+          if(!user||user.email!==identity.email||user.googleSub&&user.googleSub!==identity.sub)
+            throw Error("Google linking email mismatch");
+          if(store.db.users.some(x=>x.googleSub===identity.sub&&x.id!==user.id))
+            throw Error("Google identity already linked");
+          user.googleSub=identity.sub;user.emailVerified=true;store.save();
+        }else{
+          user=store.db.users.find(x=>x.googleSub===identity.sub);
+          if(!user){
+            if(store.db.users.some(x=>x.email===identity.email)) {
+              res.writeHead(303,{"location":ORIGIN+"/chat/?auth_error=google_link_required",
+                "set-cookie":clearGoogleCookie(ORIGIN.startsWith("https:"))});
+              return res.end();
+            }
+            if(process.env.GOOGLE_SIGNUP_ENABLED!=="1")throw Error("New Google registration not enabled");
+            user={id:randomId(),email:identity.email,pass:null,googleSub:identity.sub,
+              emailVerified:true,createdAt:now()};
+            store.db.users.push(user);store.save();
+          }
+        }
+        newSession(user,res,flow.remember);
+        const set=res.getHeader("set-cookie");
+        res.setHeader("set-cookie",[set,clearGoogleCookie(ORIGIN.startsWith("https:"))]);
+        res.writeHead(303,{"location":ORIGIN+"/chat/"+(flow.linkUserId?"?auth_notice=google_linked":"")});
+        return res.end();
+      }catch{
+        res.writeHead(303,{"location":ORIGIN+"/chat/?auth_error=google_login_failed",
+          "set-cookie":clearGoogleCookie(ORIGIN.startsWith("https:"))});
+        return res.end();
+      }
     }
     if(req.method!=="GET" && !["POST","PATCH","DELETE"].includes(req.method)) fail(405,"Метод не поддерживается");
     if(req.method!=="GET") sameOrigin(req);
