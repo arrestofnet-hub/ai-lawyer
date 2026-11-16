@@ -131,6 +131,19 @@ function updateAuthUi() {
         ?"Мы отправим код подтверждения на указанный email. Пароль — минимум 12 символов."
         :"При повторном входе укажите ту же почту, которую использовали при регистрации. Пароль может сохранить менеджер паролей браузера.";
 }
+async function offerBrowserPasswordSave(email,password) {
+  // Only the browser's password manager may save credentials after explicit opt-in.
+  // Never store a password in app cookies, localStorage or our database as plaintext.
+  if(!("PasswordCredential" in window)||!navigator.credentials?.store)return;
+  try {
+    await navigator.credentials.store(new PasswordCredential({
+      id:email,password,name:"AI Lawyer Kazakhstan"
+    }));
+  }catch{
+    // The browser may decline, or not implement password credentials; HTML
+    // autocomplete remains available in either case.
+  }
+}
 function oauthMessage() {
   const p=new URLSearchParams(location.search);
   const error=p.get("auth_error");
@@ -316,6 +329,8 @@ $("#authForm").addEventListener("submit",async ev=>{
       if(state.registered)body.invite=$("#invite").value;
       await post("/auth/"+(state.registered?"register":"login"),body);
     }
+    const enteredPassword=$("#password").value;
+    if(remember&&enteredPassword)void offerBrowserPasswordSave(email,enteredPassword);
     $("#password").value="";$("#invite").value="";$("#verifyCode").value="";
     await boot();
   } catch(e) {showError(e.message,"#authError");}
