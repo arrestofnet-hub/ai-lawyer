@@ -1,4 +1,4 @@
-import { parseLegalMarkdown, inlineTokens } from "./format.js";
+import { parseLegalMarkdown, inlineTokens, plainLegalText } from "./format.js";
 const $ = (selector) => document.querySelector(selector);
 function inlineInto(node,text) {
   for (const token of inlineTokens(text)) {
@@ -183,9 +183,9 @@ function renderMessages() {
     }
     if(msg.role==="assistant") {
       const copy=document.createElement("button");copy.className="linkbutton";copy.textContent="Копировать";
-      copy.addEventListener("click",()=>navigator.clipboard.writeText(msg.text).catch(()=>showError("Копирование недоступно")));
+      copy.addEventListener("click",()=>navigator.clipboard.writeText(plainLegalText(msg.text)).catch(()=>showError("Копирование недоступно")));
       const save=document.createElement("button");save.className="linkbutton";save.textContent="Сохранить TXT";
-      save.addEventListener("click",()=>downloadText(msg.text,"ai-lawyer-analysis.txt"));
+      save.addEventListener("click",()=>downloadText(plainLegalText(msg.text),"ai-lawyer-analysis.txt"));
       block.append(copy,save);
       for(const [format,label] of [["docx","Скачать Word"],["pdf","Скачать PDF"]]){
         const b=document.createElement("button");b.className="linkbutton";b.textContent=label;
