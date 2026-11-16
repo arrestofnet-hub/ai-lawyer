@@ -31,13 +31,13 @@ export function verifyGoogleCookie(raw,key) {
     throw Error("Expired OAuth state");
   return payload;
 }
-export function googleStart({origin,key,remember,linkUserId=null,linkSessionHash=null}) {
+export function googleStart({origin,key,remember,linkUserId=null,linkSessionHash=null,referralCode="",referralSource=""}) {
   if(!googleEnabled())throw Error("Google OAuth is not configured");
   const state=crypto.randomBytes(24).toString("base64url");
   const nonce=crypto.randomBytes(24).toString("base64url");
   const verifier=crypto.randomBytes(48).toString("base64url");
   const challenge=crypto.createHash("sha256").update(verifier).digest("base64url");
-  const payload={state,nonce,verifier,issued:Date.now(),remember:!!remember,linkUserId,linkSessionHash};
+  const payload={state,nonce,verifier,issued:Date.now(),remember:!!remember,linkUserId,linkSessionHash,referralCode,referralSource};
   const url=new URL("https://accounts.google.com/o/oauth2/v2/auth");
   for(const [k,v] of Object.entries({
     client_id:process.env.GOOGLE_CLIENT_ID,
