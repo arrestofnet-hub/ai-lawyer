@@ -34,13 +34,16 @@ CHANGED=1
 git merge --ff-only FETCH_HEAD
 chmod -R a+rX "$APP"
 cd "$APP/web"
+npm install --omit=dev --no-package-lock --ignore-scripts --no-audit --no-fund
+chmod -R a+rX "$APP"
 npm run check
 npm test
 systemctl restart ai-lawyer-web
 sleep 2
 curl -fsS --max-time 10 http://127.0.0.1:8791/chat/health | grep -q '"ok":true'
 curl -kfsS --max-time 10 --resolve ailawyer.kz:443:127.0.0.1 https://ailawyer.kz/chat/ | grep -q 'id="attachShortcut"'
-curl -kfsS --max-time 10 --resolve ailawyer.kz:443:127.0.0.1 https://ailawyer.kz/chat/app.js | grep -q 'updateSelectedCount'
+curl -kfsS --max-time 10 --resolve ailawyer.kz:443:127.0.0.1 https://ailawyer.kz/chat/app.js | grep -q 'formattedAnswer'
+curl -kfsS --max-time 10 --resolve ailawyer.kz:443:127.0.0.1 https://ailawyer.kz/chat/format.js | grep -q 'parseLegalMarkdown'
 CHANGED=0
 trap - ERR
 echo 'SUCCESS: standalone AI Lawyer updated. Existing plugin, invite page and encrypted case files left unchanged.'
