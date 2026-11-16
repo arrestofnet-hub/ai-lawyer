@@ -84,6 +84,22 @@ export function emailCodeMatches(email,code,hash,key) {
   const a=Buffer.from(emailCodeHash(email,code,key)),b=Buffer.from(hash||"");
   return a.length===b.length&&crypto.timingSafeEqual(a,b);
 }
+export async function sendPasswordResetCode(email,code) {
+  if(!mailEnabled())throw Error("Email delivery not configured");
+  const transport=nodemailer.createTransport({
+    host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),
+    secure:String(process.env.SMTP_PORT)==="465",
+    requireTLS:String(process.env.SMTP_PORT)!=="465",
+    auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS},
+  });
+  try {
+    await transport.sendMail({
+      from:process.env.SMTP_FROM,to:email,
+      subject:"AI Lawyer Kazakhstan — восстановление пароля",
+      text:"Код для сброса пароля: "+code+"\n\nСрок действия — 15 минут. Если вы не запрашивали восстановление, просто проигнорируйте письмо.",
+    });
+  } finally { transport.close(); }
+}
 export async function sendVerificationCode(email,code) {
   if(!mailEnabled())throw Error("Email delivery not configured");
   const transport=nodemailer.createTransport({
