@@ -71,3 +71,20 @@ export function parseLegalMarkdown(input) {
   }
   return blocks;
 }
+
+export function plainLegalText(markdown) {
+  const result=[];
+  for(const block of parseLegalMarkdown(markdown)){
+    if(block.kind==="table"){
+      result.push(block.headers.join("\t"));
+      for(const row of block.rows)result.push(row.join("\t"));
+      result.push("");
+    } else if(block.kind==="ordered"||block.kind==="bullets"){
+      block.items.forEach((item,i)=>result.push((block.kind==="ordered"?(i+1)+". ":"• ")+item));
+      result.push("");
+    } else {
+      result.push(plainText(block.text),"");
+    }
+  }
+  return result.join("\n").trim();
+}
