@@ -122,6 +122,9 @@ function updateAuthUi() {
   const requiresCode=state.awaitingCode;
   const legacy=registration&&state.signupMode==="invite"&&!requiresCode;
   $("#referralWrap").hidden=!registration||requiresCode;
+  $("#referralHelp").textContent=legacy
+    ?"Партнёрский код необязателен. Бонус 50 AI-токенов станет доступен после подключения подтверждения email; тестовая регистрация бонус не начисляет."
+    :"Нет партнёрской ссылки? Оставьте поле пустым. По действующей ссылке — 50 AI-токенов после подтверждения почты (50 обычных консультаций).";
   $("#legacyInviteToggle").hidden=!legacy;
   $("#legacyInviteToggle").textContent=state.legacyInviteVisible
     ?"Скрыть поле тестового кода":"Есть тестовый код доступа";
