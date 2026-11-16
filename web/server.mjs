@@ -295,7 +295,7 @@ const server=http.createServer(async(req,res)=>{
     }
     if(req.method!=="GET" && !["POST","PATCH","DELETE"].includes(req.method)) fail(405,"Метод не поддерживается");
     if(req.method!=="GET") sameOrigin(req);
-    const exportMatch=url.pathname.match(/^\\/chat\\/api\\/cases\\/([a-f0-9-]{36})\\/export\\/([a-f0-9-]{36})$/);
+    const exportMatch=url.pathname.match(new RegExp("^/chat/api/cases/([a-f0-9-]{36})/export/([a-f0-9-]{36})$"));
     if(req.method==="GET" && exportMatch) {
       const {c}=ownedCase(req,exportMatch[1]);
       const message=store.db.messages.find(m=>m.caseId===c.id && m.id===exportMatch[2] && m.role==="assistant");
