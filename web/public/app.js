@@ -74,7 +74,7 @@ async function downloadExport(caseId,messageId,format,button) {
   } catch(e) {showError(e.message);}
   finally {button.disabled=false;button.textContent=original;}
 }
-const state = { user:null, cases:[], current:null, mode:"consult", docIds:new Set(), busy:false, registered:false, dailyLimit:0 };
+const state = { user:null, cases:[], current:null, mode:"consult", docIds:new Set(), busy:false, registered:false, awaitingCode:false, signupMode:"invite", googleEnabled:false, dailyLimit:0 };
 const API = "/chat/api";
 const MODE_HELP = {
   consult:"Консультация — предварительный разбор и ближайшее действие",
@@ -108,12 +108,53 @@ function authView(isAuthed) {
   $("#authScreen").style.display=isAuthed?"none":"grid";
   $("#app").style.display=isAuthed?"grid":"none";
 }
+function updateAuthUi() {
+  const registration=state.registered;
+  const requiresCode=state.awaitingCode;
+  $("#invite").hidden=!registration||state.signupMode!=="invite"||requiresCode;
+  $("#invite").required=registration&&state.signupMode==="invite"&&!requiresCode;
+  $("#verifyCode").hidden=!requiresCode;
+  $("#verifyCode").required=requiresCode;
+  $("#password").hidden=requiresCode;
+  $("#password").required=!requiresCode;
+  $("#password").autocomplete=registration?"new-password":"current-password";
+  $("#authSubmit").textContent=requiresCode?"Подтвердить email":registration?"Зарегистрироваться":"Войти";
+  $("#toggleRegister").textContent=registration?"У меня уже есть аккаунт":"Зарегистрироваться по email";
+  $("#toggleRegister").disabled=state.signupMode==="disabled"&&!registration;
+  $("#googleLogin").disabled=!state.googleEnabled;
+  $("#googleLogin").title=state.googleEnabled?"Вход через аккаунт Google":"Нужно подключить Google OAuth в настройках сервера";
+  $("#authHelp").textContent=requiresCode
+    ?"Введите шестизначный код, отправленный на вашу электронную почту. Он действителен 15 минут."
+    :registration&&state.signupMode==="invite"
+      ?"Тестовая регистрация: укажите email, пароль и код приглашения. Свободная регистрация откроется после настройки почтового сервера."
+      :registration&&state.signupMode==="email"
+        ?"Мы отправим код подтверждения на указанный email. Пароль — минимум 12 символов."
+        :"При повторном входе укажите ту же почту, которую использовали при регистрации. Пароль может сохранить менеджер паролей браузера.";
+}
+function oauthMessage() {
+  const p=new URLSearchParams(location.search);
+  const error=p.get("auth_error");
+  const notice=p.get("auth_notice");
+  if(error==="google_link_required") showError("Почта уже зарегистрирована. Войдите с паролем, затем нажмите «Подключить Google».","#authError");
+  else if(error==="google_login_failed")showError("Не удалось войти через Google. Проверьте настройки или попробуйте снова.","#authError");
+  else if(notice==="google_linked")showError("Аккаунт Google успешно подключён.","#notice");
+  if(error||notice){
+    p.delete("auth_error");p.delete("auth_notice");
+    const query=p.toString();
+    history.replaceState(null,"",location.pathname+(query?"?"+query:""));
+  }
+}
 async function boot() {
   try {
     const s=await request("/session");
-    if(!s.authenticated) {authView(false);return;}
+    state.signupMode=s.signupMode||"invite";
+    state.googleEnabled=!!s.googleEnabled;
+    updateAuthUi();
+    if(!s.authenticated) {authView(false);oauthMessage();return;}
     state.user=s.user;state.dailyLimit=s.dailyLimit;
     authView(true);$("#who").textContent=s.user.email;
+    $("#googleLink").hidden=!state.googleEnabled||!!s.user.googleLinked;
+    oauthMessage();
     if(!s.configured) showError("AI-ключ ещё не подключён. Можно подготовить дела и документы.");
     await loadCases();
   } catch(e){authView(false);showError(e.message,"#authError");}
@@ -244,21 +285,41 @@ function renderSummary() {
 }
 $("#toggleRegister").addEventListener("click",()=>{
   state.registered=!state.registered;
-  $("#invite").hidden=!state.registered;
-  $("#invite").required=state.registered;
-  $("#authSubmit").textContent=state.registered?"Создать аккаунт":"Войти";
-  $("#toggleRegister").textContent=state.registered?"У меня уже есть аккаунт":"Регистрация по приглашению";
+  state.awaitingCode=false;
+  $("#verifyCode").value="";
   $("#authError").textContent="";
+  updateAuthUi();
+});
+$("#googleLogin").addEventListener("click",()=>{
+  if(!state.googleEnabled)return;
+  location.assign("/chat/auth/google/start?remember="+($("#remember").checked?"1":"0"));
+});
+$("#googleLink").addEventListener("click",()=>{
+  if(!state.googleEnabled)return;
+  location.assign("/chat/auth/google/start?link=1&remember=1");
 });
 $("#authForm").addEventListener("submit",async ev=>{
   ev.preventDefault();$("#authError").textContent="";
   const submit=$("#authSubmit");submit.disabled=true;
-  try{
-    const b={email:$("#email").value,password:$("#password").value};
-    if(state.registered) b.invite=$("#invite").value;
-    await post("/auth/"+(state.registered?"register":"login"),b);
-    $("#password").value="";$("#invite").value="";await boot();
-  }catch(e){showError(e.message,"#authError");}finally{submit.disabled=false;}
+  try {
+    const email=$("#email").value.trim(), remember=$("#remember").checked;
+    if(state.awaitingCode) {
+      await post("/auth/email-verify",{email,code:$("#verifyCode").value.trim()});
+      state.awaitingCode=false;
+    } else if(state.registered&&state.signupMode==="email") {
+      await post("/auth/email-start",{email,password:$("#password").value,remember});
+      state.awaitingCode=true;updateAuthUi();
+      $("#verifyCode").focus();
+      return;
+    } else {
+      const body={email,password:$("#password").value,remember};
+      if(state.registered)body.invite=$("#invite").value;
+      await post("/auth/"+(state.registered?"register":"login"),body);
+    }
+    $("#password").value="";$("#invite").value="";$("#verifyCode").value="";
+    await boot();
+  } catch(e) {showError(e.message,"#authError");}
+  finally {submit.disabled=false;}
 });
 $("#logout").addEventListener("click",async()=>{
   try{await post("/auth/logout",{});state.user=null;state.current=null;authView(false);}
