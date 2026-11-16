@@ -179,6 +179,22 @@ async function api(req,res,url) {
       googleEnabled:googleEnabled()
     });
   }
+  if(p==="/chat/api/admin/referrals"&&["POST","GET"].includes(req.method)){
+    if(!adminAuthorized(req.socket.remoteAddress,req.headers["x-ai-lawyer-admin-key"],process.env.REFERRAL_ADMIN_KEY))
+      fail(403,"Administrative access denied");
+    if(req.method==="GET")return json(res,200,{campaigns:(store.db.referrals||[]).map(c=>({
+      code:c.code,partner:c.partner,active:c.active,credits:c.credits,
+      redemptions:c.redemptions,maxRedemptions:c.maxRedemptions,createdAt:c.createdAt
+    }))});
+    const b=await bodyJson(req);
+    let campaign;
+    try{campaign=createCampaign(store.db,{partner:b.partner,maxRedemptions:b.maxRedemptions??20});}
+    catch(e){fail(400,e.message);}
+    store.save();
+    return json(res,201,{
+      campaign,link:ORIGIN+"/chat/?ref="+encodeURIComponent(campaign.code)
+    });
+  }
   if (req.method === "POST" && p === "/chat/api/auth/register") {
     rateLimit(req,"auth",8,15*60000);
     const b = await bodyJson(req), email = validateEmail(b.email);
@@ -195,8 +211,13 @@ async function api(req,res,url) {
     const b=await bodyJson(req),email=validateEmail(b.email);
     if(!email||!validPassword(b.password))fail(400,"Проверьте email и пароль (минимум 12 символов)");
     if(store.db.users.some(u=>u.email===email))fail(409,"Этот адрес уже зарегистрирован");
+    const referralCode=normalizeReferral(b.referralCode);
+    if(referralCode===null)fail(400,"Некорректный партнёрский код");
+    if(referralCode&&!campaignByCode(store.db,referralCode))
+      fail(400,"Партнёрский код недействителен или лимит регистраций исчерпан");
     const code=newEmailCode();
     const pending={email,pass:hashPassword(b.password),codeHash:emailCodeHash(email,code,KEY),
+      referralCode,referralSource:safeSource(b.referralSource),
       expiresAt:Date.now()+15*60000,attempts:0,remember:b.remember===true};
     store.db.pendingSignups=(store.db.pendingSignups||[]).filter(x=>x.expiresAt>Date.now()&&x.email!==email);
     if(store.db.pendingSignups.length>=1000)fail(429,"Регистрация временно ограничена");
@@ -220,7 +241,12 @@ async function api(req,res,url) {
     store.save();
     if(!success)fail(400,"Неверный код подтверждения");
     if(store.db.users.some(u=>u.email===email))fail(409,"Этот адрес уже зарегистрирован");
-    const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now()};
+    let grant;
+    try{grant=allocateVerifiedRegistration(store.db,pending.referralCode);}
+    catch{fail(409,"Партнёрский код больше недействителен. Начните регистрацию заново");}
+    const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now(),
+      credits:grant.credits,accountType:"trial",referralCode:grant.referralCode,
+      referralSource:pending.referralSource||null};
     store.db.users.push(u);store.save();newSession(u,res,pending.remember);
     return json(res,201,{user:safeUser(u)});
   }
