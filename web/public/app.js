@@ -309,7 +309,7 @@ $("#googleLogin").addEventListener("click",()=>{
 });
 $("#googleLink").addEventListener("click",()=>{
   if(!state.googleEnabled)return;
-  location.assign("/chat/auth/google/start?link=1&remember=1");
+  location.assign("/chat/auth/google/start?link=1");
 });
 $("#authForm").addEventListener("submit",async ev=>{
   ev.preventDefault();$("#authError").textContent="";
