@@ -79,7 +79,7 @@ function sessionCookie(token, maxAge) {
 function newSession(user,res,remember=false) {
   const days=remember?30:1;
   const token=crypto.randomBytes(32).toString("hex");
-  store.db.sessions.push({hash:tokenHash(token),userId:user.id,expiresAt:Date.now()+days*86400000});
+  store.db.sessions.push({hash:tokenHash(token),userId:user.id,remember:!!remember,expiresAt:Date.now()+days*86400000});
   store.db.sessions=store.db.sessions.filter(x=>x.expiresAt>Date.now());
   store.save();
   // A persistent 30-day login is issued only after an explicit Remember me choice.
@@ -346,8 +346,10 @@ const server=http.createServer(async(req,res)=>{
       const link=url.searchParams.get("link")==="1";
       const user=link?requireUser(req):null;
       const raw=cookies(req).al_session;
+      const linkedSession=user?store.db.sessions.find(x=>x.userId===user.id&&x.hash===tokenHash(raw)):null;
       const flow=googleStart({
-        origin:ORIGIN,key:KEY,remember:url.searchParams.get("remember")==="1",
+        origin:ORIGIN,key:KEY,
+        remember:link?linkedSession?.remember===true:url.searchParams.get("remember")==="1",
         linkUserId:user?.id||null,linkSessionHash:user?tokenHash(raw):null
       });
       res.writeHead(302,{"location":flow.url,"set-cookie":flow.cookie,"cache-control":"no-store"});
