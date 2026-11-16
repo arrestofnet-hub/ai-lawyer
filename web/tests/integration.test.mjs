@@ -12,7 +12,8 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"al-integration-"));
   const port=21000+Math.floor(Math.random()*12000);
   const base="http://127.0.0.1:"+port;
-  const env={...process.env, PORT:String(port), HOST:"127.0.0.1", PUBLIC_ORIGIN:base,
+  const adminKey=crypto.randomBytes(32).toString("hex");
+  const env={...process.env, REFERRAL_ADMIN_KEY:adminKey, PORT:String(port), HOST:"127.0.0.1", PUBLIC_ORIGIN:base,
     DATA_DIR:temp, DATA_KEY:crypto.randomBytes(32).toString("hex"), SIGNUP_INVITE_CODE:"invite-for-test",
     OPENAI_API_KEY:""};
   const filename=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..","server.mjs");
@@ -29,6 +30,25 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
     assert.equal(initial.signupMode,"invite");
     assert.equal(initial.googleEnabled,false);
     assert.equal((await fetch(base+"/chat/auth/google/start")).status,503);
+    const blockedCampaign=await fetch(base+"/chat/api/admin/referrals",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({partner:"Test Campaign",maxRedemptions:2})
+    });
+    assert.equal(blockedCampaign.status,403,"campaign creation is not public");
+    const makeCampaign=await fetch(base+"/chat/api/admin/referrals",{
+      method:"POST",headers:{"content-type":"application/json","x-ai-lawyer-admin-key":adminKey},
+      body:JSON.stringify({partner:"Test Campaign",maxRedemptions:2})
+    });
+    assert.equal(makeCampaign.status,201);
+    const campaign=await makeCampaign.json();
+    assert.match(campaign.link,/\/chat\/\?ref=[A-Z0-9]{12}$/);
+    assert.equal(campaign.campaign.credits,50);
+    const campaignStats=await fetch(base+"/chat/api/admin/referrals",{
+      headers:{"x-ai-lawyer-admin-key":adminKey}
+    });
+    assert.equal(campaignStats.status,200);
+    assert.equal((await campaignStats.json()).campaigns[0].redemptions,0,"no bonus before verification");
+
     const page=await fetch(base+"/chat/");
     assert.equal(page.status,200);
     const html=await page.text();
@@ -39,6 +59,9 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
     assert.match(html,/id="remember"/);
     assert.match(html,/id="googleLogin"/);
     assert.match(html,/id="verifyCode"/);
+    assert.match(html,/id="referralCode"/);
+    assert.match(html,/id="referralHelp"/);
+    assert.match(html,/id="legacyInviteToggle"/);
     const frontend=await fetch(base+"/chat/app.js");
     assert.equal(frontend.status,200);
     const js=await frontend.text();
@@ -52,6 +75,17 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
       return cookie;
     };
     const a=await make("a@example.kz"), b=await make("b@example.kz");
+    const legacySession=await fetch(base+"/chat/api/session",{headers:{cookie:a}});
+    const legacy=await legacySession.json();
+    assert.equal(legacy.balance,null,"existing invite accounts preserve legacy limit");
+    assert.equal(legacy.dailyLimit,25);
+    assert.equal(legacy.prices.consult,1);
+    const blockedEmail=await fetch(base+"/chat/api/auth/email-start",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({email:"unverified@example.kz",password:"valid-password-123",referralCode:campaign.campaign.code})
+    });
+    assert.equal(blockedEmail.status,503,"email signup remains disabled without SMTP");
+
     const regularLogin=await fetch(base+"/chat/api/auth/login",{
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({email:"a@example.kz",password:"secure-test-password-123",remember:false})
