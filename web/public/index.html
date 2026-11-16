@@ -84,7 +84,7 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <button data-mode="consult" class="selected">Консультация</button><button data-mode="audit">Противоречия</button><button data-mode="strategy">Стратегия</button><button data-mode="draft">Документ</button><button data-mode="review">Перепроверка</button>
 </div>
 <form id="messageForm"><textarea id="messageInput" placeholder="Опишите задачу по делу" aria-label="Сообщение" maxlength="14000" required></textarea>
-<div class="composer-bottom"><span class="small" id="notice">AI может ошибаться. Проверяйте нормы, сроки и документы.</span><button type="submit" class="primary" id="send">Отправить</button></div>
+<div class="composer-bottom"><div class="inline-tools"><button type="button" class="secondary" id="attachShortcut" title="Прикрепить PDF, Word, изображение или текстовый файл">📎 Прикрепить</button><span class="small" id="selectedCount">Файлы не выбраны</span></div><button type="submit" class="primary" id="send">Отправить</button></div><div class="small" id="modeHint" role="status" style="padding-top:7px">Консультация — предварительный разбор и ближайшее действие</div><div class="small" id="notice" role="status" style="padding-top:5px">AI может ошибаться. Проверяйте нормы, сроки и документы.</div>
 </form>
 </div>
 </section></main>
