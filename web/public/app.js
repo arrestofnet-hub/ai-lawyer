@@ -135,6 +135,13 @@ function updateAuthUi() {
   $("#password").hidden=requiresCode;
   $("#password").required=!requiresCode;
   $("#password").autocomplete=registration?"new-password":"current-password";
+  const confirmNeeded=registration&&!requiresCode;
+  $("#confirmPasswordWrap").hidden=!confirmNeeded;
+  $("#confirmPassword").required=confirmNeeded;
+  $("#confirmPassword").disabled=!confirmNeeded;
+  $("#confirmPassword").autocomplete="new-password";
+  $("#showPasswordWrap").hidden=requiresCode;
+  validatePasswordMatch(false);
   $("#authSubmit").textContent=requiresCode?"Подтвердить email":registration?"Зарегистрироваться":"Войти";
   // Until the SMTP mailbox is configured, registration stays invite-only.
   $("#authSubmit").disabled=legacy&&!state.legacyInviteVisible;
@@ -149,6 +156,19 @@ function updateAuthUi() {
       ?"Мы отправим письмо с кодом подтверждения. Без партнёрской ссылки регистрация тоже доступна."
       :registration?"Открытая регистрация будет доступна после подключения почтовой отправки."
       :"Войдите с той же почтой, которую использовали при регистрации. Пароль можно сохранить в менеджере паролей браузера.";
+}
+function validatePasswordMatch(showErrors=true){
+  const confirm=$("#confirmPassword");
+  const help=$("#confirmPasswordHelp");
+  const first=$("#password").value;
+  const repeated=confirm.value;
+  const relevant=state.registered&&!state.awaitingCode;
+  const mismatch=relevant&&repeated.length>0&&first!==repeated;
+  confirm.setCustomValidity(mismatch?"Пароли не совпадают":"");
+  help.classList.toggle("invalid",mismatch);
+  help.textContent=mismatch?"Пароли не совпадают":relevant&&repeated.length>0?"Пароли совпадают":"Повторите пароль для проверки";
+  if(showErrors&&mismatch)confirm.reportValidity();
+  return !mismatch&&(!relevant||first===repeated);
 }
 function currentPrice(){
   if(state.mode==="consult"&&state.docIds.size)return Math.max(3,state.docIds.size*3);
@@ -329,11 +349,19 @@ function renderSummary() {
   });
   panel.append(refresh);
 }
+$("#showPassword").addEventListener("change",ev=>{
+  const type=ev.target.checked?"text":"password";
+  $("#password").type=type;
+  $("#confirmPassword").type=type;
+});
+$("#password").addEventListener("input",()=>validatePasswordMatch(false));
+$("#confirmPassword").addEventListener("input",()=>validatePasswordMatch(false));
 $("#toggleRegister").addEventListener("click",()=>{
   state.registered=!state.registered;
   state.awaitingCode=false;
   state.legacyInviteVisible=false;
   $("#verifyCode").value="";
+  $("#confirmPassword").value="";
   $("#authError").textContent="";
   updateAuthUi();
 });
@@ -359,6 +387,10 @@ $("#authForm").addEventListener("submit",async ev=>{
   const submit=$("#authSubmit");submit.disabled=true;
   try {
     const email=$("#email").value.trim(), remember=$("#remember").checked;
+    if(state.registered&&!state.awaitingCode&&!validatePasswordMatch(true)){
+      showError("Проверьте повтор пароля: оба значения должны совпадать.","#authError");
+      return;
+    }
     if(state.awaitingCode) {
       await post("/auth/email-verify",{email,code:$("#verifyCode").value.trim()});
       state.awaitingCode=false;
@@ -368,7 +400,12 @@ $("#authForm").addEventListener("submit",async ev=>{
         referralCode:$("#referralCode").value.trim().toUpperCase(),
         referralSource:sourceFromLink
       });
-      state.awaitingCode=true;updateAuthUi();
+      state.awaitingCode=true;
+      $("#confirmPassword").value="";
+      $("#showPassword").checked=false;
+      $("#password").type="password";
+      $("#confirmPassword").type="password";
+      updateAuthUi();
       $("#verifyCode").focus();
       return;
     } else {
@@ -381,7 +418,9 @@ $("#authForm").addEventListener("submit",async ev=>{
     }
     const enteredPassword=$("#password").value;
     if(remember&&enteredPassword)void offerBrowserPasswordSave(email,enteredPassword);
-    $("#password").value="";$("#invite").value="";$("#verifyCode").value="";
+    $("#password").value="";$("#confirmPassword").value="";
+    $("#showPassword").checked=false;$("#password").type="password";$("#confirmPassword").type="password";
+    $("#invite").value="";$("#verifyCode").value="";
     await boot();
   } catch(e) {showError(e.message,"#authError");}
   finally {submit.disabled=false;}
