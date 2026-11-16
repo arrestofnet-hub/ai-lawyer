@@ -25,6 +25,10 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
       await delay(100);
     }
     assert.equal(ready,true,"server should start");
+    const initial=await (await fetch(base+"/chat/api/session")).json();
+    assert.equal(initial.signupMode,"invite");
+    assert.equal(initial.googleEnabled,false);
+    assert.equal((await fetch(base+"/chat/auth/google/start")).status,503);
     const page=await fetch(base+"/chat/");
     assert.equal(page.status,200);
     const html=await page.text();
@@ -32,6 +36,9 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
     assert.match(html,/id="attachShortcut"/);
     assert.match(html,/id="selectedCount"/);
     assert.match(html,/id="modeHint"/);
+    assert.match(html,/id="remember"/);
+    assert.match(html,/id="googleLogin"/);
+    assert.match(html,/id="verifyCode"/);
     const frontend=await fetch(base+"/chat/app.js");
     assert.equal(frontend.status,200);
     const js=await frontend.text();
@@ -45,6 +52,24 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
       return cookie;
     };
     const a=await make("a@example.kz"), b=await make("b@example.kz");
+    const regularLogin=await fetch(base+"/chat/api/auth/login",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({email:"a@example.kz",password:"secure-test-password-123",remember:false})
+    });
+    assert.equal(regularLogin.status,200);
+    assert.doesNotMatch(regularLogin.headers.get("set-cookie"),/Max-Age=/i);
+    const rememberedLogin=await fetch(base+"/chat/api/auth/login",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({email:"a@example.kz",password:"secure-test-password-123",remember:true})
+    });
+    assert.equal(rememberedLogin.status,200);
+    assert.match(rememberedLogin.headers.get("set-cookie"),/Max-Age=2592000/);
+    const noMail=await fetch(base+"/chat/api/auth/email-start",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({email:"c@example.kz",password:"secure-test-password-123"})
+    });
+    assert.equal(noMail.status,503);
+
     const call=async(cookie,route,method="GET",body,headers={})=>{
       const r=await fetch(base+"/chat/api"+route,{method,headers:{cookie,...headers,...(body && typeof body==="object" && !Buffer.isBuffer(body)?{"content-type":"application/json"}:{})},body:body===undefined?undefined:Buffer.isBuffer(body)?body:JSON.stringify(body)});
       return {status:r.status,data:await r.json()};
