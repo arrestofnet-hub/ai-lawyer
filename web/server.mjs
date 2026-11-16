@@ -6,6 +6,11 @@ import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { exportDocx, exportPdf } from "./export.mjs";
 import {
+  REFERRAL_BONUS,TRIAL_CREDITS,aiTokenCost,normalizeReferral,safeSource,
+  campaignByCode,createCampaign,registrationCredit,allocateVerifiedRegistration,
+  balanceOf,canSpend,spendCredits,adminAuthorized
+} from "./referrals.mjs";
+import {
   googleEnabled, mailEnabled, googleStart, googleIdentity, verifyGoogleCookie, clearGoogleCookie,
   newEmailCode, emailCodeHash, emailCodeMatches, sendVerificationCode
 } from "./auth.mjs";
@@ -27,6 +32,7 @@ const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
 const DAILY_LIMIT = Math.max(1, Number(process.env.MAX_MESSAGES_PER_DAY || 25));
 const MAX_USER_DOCS_PER_CHAT = 3;
 const throttle = new Map();
+const activeModelRequests=new Set();
 const now = () => new Date().toISOString();
 
 const HTML = fs.readFileSync(path.join(dirname, "public", "index.html"));
@@ -135,11 +141,28 @@ function countToday(userId) {
   const date = new Date().toISOString().slice(0,10);
   return store.db.usage.filter(u => u.userId === userId && u.date === date).reduce((n,u)=>n+u.count,0);
 }
-function charge(userId) {
+function charge(userId,credits=1) {
   const date = new Date().toISOString().slice(0,10);
   const usage = store.db.usage.find(x=>x.userId === userId && x.date === date);
-  if (usage) usage.count++; else store.db.usage.push({userId,date,count:1});
+  if (usage) usage.count+=credits; else store.db.usage.push({userId,date,count:credits});
   store.db.usage = store.db.usage.filter(u => u.date >= new Date(Date.now()-14*86400000).toISOString().slice(0,10));
+}
+function verifyCreditAccess(user,cost){
+  if(countToday(user.id)+cost>DAILY_LIMIT)
+    fail(429,"Дневной лимит AI-токенов исчерпан. Обновится в 00:00 UTC");
+  if(!canSpend(user,cost))
+    fail(402,"Недостаточно AI-токенов. Пополнение пока недоступно");
+}
+function completeCreditOperation(user,cost){
+  spendCredits(user,cost);
+  charge(user.id,cost);
+}
+function profile(user){
+  return {balance:balanceOf(user),dailyUsed:countToday(user.id),dailyLimit:DAILY_LIMIT,priceUnit:"AI-токены",prices:{
+    consult:aiTokenCost("consult"),audit:aiTokenCost("audit"),
+    strategy:aiTokenCost("strategy"),draft:aiTokenCost("draft"),
+    review:aiTokenCost("review"),compact:aiTokenCost("compact")
+  }};
 }
 
 async function api(req,res,url) {
@@ -150,6 +173,9 @@ async function api(req,res,url) {
       authenticated:!!user,user:user?safeUser(user):null,
       configured:!!process.env.OPENAI_API_KEY,dailyLimit:DAILY_LIMIT,
       signupMode:mailEnabled()?"email":process.env.SIGNUP_INVITE_CODE?"invite":"disabled",
+      emailVerificationEnabled:mailEnabled(),referralBonus:REFERRAL_BONUS,
+      prices:profile(user).prices,
+      ...(user?profile(user):{}),
       googleEnabled:googleEnabled()
     });
   }
@@ -215,7 +241,7 @@ async function api(req,res,url) {
   if (req.method === "GET" && p === "/chat/api/cases") {
     const u=requireUser(req);
     const cases=store.db.cases.filter(c=>c.ownerId===u.id&&!c.deletedAt).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(c=>store.publicCase(c));
-    return json(res,200,{cases,usedToday:countToday(u.id)});
+    return json(res,200,{cases,usedToday:countToday(u.id),...profile(u)});
   }
   if (req.method === "POST" && p === "/chat/api/cases") {
     const u=requireUser(req), b=await bodyJson(req);
