@@ -329,13 +329,23 @@ function renderSummary() {
 $("#toggleRegister").addEventListener("click",()=>{
   state.registered=!state.registered;
   state.awaitingCode=false;
+  state.legacyInviteVisible=false;
   $("#verifyCode").value="";
+  $("#authError").textContent="";
+  updateAuthUi();
+});
+$("#legacyInviteToggle").addEventListener("click",()=>{
+  state.legacyInviteVisible=!state.legacyInviteVisible;
   $("#authError").textContent="";
   updateAuthUi();
 });
 $("#googleLogin").addEventListener("click",()=>{
   if(!state.googleEnabled)return;
-  location.assign("/chat/auth/google/start?remember="+($("#remember").checked?"1":"0"));
+  const p=new URLSearchParams({remember:$("#remember").checked?"1":"0"});
+  const code=$("#referralCode").value.trim().toUpperCase();
+  if(code)p.set("ref",code);
+  if(sourceFromLink)p.set("src",sourceFromLink);
+  location.assign("/chat/auth/google/start?"+p.toString());
 });
 $("#googleLink").addEventListener("click",()=>{
   if(!state.googleEnabled)return;
@@ -350,19 +360,27 @@ $("#authForm").addEventListener("submit",async ev=>{
       await post("/auth/email-verify",{email,code:$("#verifyCode").value.trim()});
       state.awaitingCode=false;
     } else if(state.registered&&state.signupMode==="email") {
-      await post("/auth/email-start",{email,password:$("#password").value,remember});
+      await post("/auth/email-start",{
+        email,password:$("#password").value,remember,
+        referralCode:$("#referralCode").value.trim().toUpperCase(),
+        referralSource:sourceFromLink
+      });
       state.awaitingCode=true;updateAuthUi();
       $("#verifyCode").focus();
       return;
     } else {
       const body={email,password:$("#password").value,remember};
-      if(state.registered)body.invite=$("#invite").value;
+      if(state.registered){
+        if(!state.legacyInviteVisible)throw Error("Почтовое подтверждение пока настраивается. Для тестового доступа укажите существующий код приглашения.");
+        body.invite=$("#invite").value;
+      }
       await post("/auth/"+(state.registered?"register":"login"),body);
     }
     const enteredPassword=$("#password").value;
     if(remember&&enteredPassword)void offerBrowserPasswordSave(email,enteredPassword);
     $("#password").value="";$("#invite").value="";$("#verifyCode").value="";
-    await boot();
+    await if(referralFromLink)$("#referralCode").value=referralFromLink;
+boot();
   } catch(e) {showError(e.message,"#authError");}
   finally {submit.disabled=false;}
 });
@@ -393,7 +411,7 @@ $("#toggleSummary").addEventListener("click",()=>{
 $("#modes").addEventListener("click",ev=>{
   const b=ev.target.closest("button[data-mode]");if(!b) return;
   state.mode=b.dataset.mode;
-  $("#modeHint").textContent=MODE_HELP[state.mode]||"";
+  updateModeHint();
   for(const e of $("#modes").querySelectorAll("button"))e.classList.toggle("selected",e===b);
 });
 $("#attachShortcut").addEventListener("click",()=>{
