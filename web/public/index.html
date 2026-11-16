@@ -12,7 +12,14 @@ button:disabled{opacity:.55;cursor:default}a{color:#1759a7}
 .brand{display:flex;align-items:center;gap:12px}.brand img{width:42px;height:42px}.brand b{font-size:18px}.muted{font-size:13px;color:#66758a}
 input,textarea{width:100%;border:1px solid #cbd4df;border-radius:12px;background:#fff;color:#162840;padding:12px;outline:0}
 input:focus,textarea:focus{border-color:#2971bb;box-shadow:0 0 0 3px #2d77be20}
-.authbox input{margin-top:12px}.authbox .primary{width:100%;margin-top:14px}
+.authbox input:not([type="checkbox"]){margin-top:12px}.authbox .primary{width:100%;margin-top:14px}
+.authbox .remember{margin-top:14px;display:flex;gap:10px;align-items:center;font-size:14px;color:#304763}
+.authbox .remember input{width:auto;margin:0;accent-color:#173c68}
+.authbox .google{width:100%;margin-top:11px;background:#fff;color:#253954;display:flex;align-items:center;justify-content:center;gap:10px}
+.authbox .google:disabled{opacity:.55;cursor:not-allowed}
+.authbox .divider{display:flex;align-items:center;gap:12px;margin:16px 0 7px;color:#7b8797;font-size:12px}
+.authbox .divider:before,.authbox .divider:after{content:"";height:1px;flex:1;background:#dae1ea}
+#authHelp{margin:6px 0 0;color:#66758a;font-size:12px}
 .primary{border:0;background:#173c68;color:#fff;border-radius:11px;padding:11px 16px;font-weight:650}
 .secondary{border:1px solid #d2dbe6;background:white;color:#173c68;padding:9px 12px;border-radius:10px}
 .linkbutton{border:0;background:transparent;color:#1a5d9b;padding:8px}
@@ -68,12 +75,17 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <section id="authScreen"><div class="authbox">
 <div class="brand"><img src="/chat/logo.svg" alt=""><div><b>AI Lawyer Kazakhstan</b><div class="muted">Личный кабинет</div></div></div>
 <form id="authForm" autocomplete="on">
-<input id="email" type="email" placeholder="Электронная почта" aria-label="Электронная почта" required>
-<input id="password" type="password" minlength="12" placeholder="Пароль" aria-label="Пароль" required>
-<input id="invite" type="password" placeholder="Код приглашения" aria-label="Код приглашения" hidden>
+<input id="email" name="username" type="email" autocomplete="username" placeholder="Электронная почта" aria-label="Электронная почта" required>
+<input id="password" name="password" type="password" autocomplete="current-password" minlength="12" placeholder="Пароль" aria-label="Пароль" required>
+<input id="invite" name="invite" type="password" autocomplete="off" placeholder="Код приглашения для тестового доступа" aria-label="Код приглашения" hidden>
+<input id="verifyCode" name="one-time-code" type="text" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="Код из письма (6 цифр)" aria-label="Код подтверждения email" hidden>
+<label class="remember" for="remember"><input id="remember" name="remember" type="checkbox"> Запомнить меня на 30 дней</label>
 <button class="primary" id="authSubmit" type="submit">Войти</button>
 </form>
-<button class="linkbutton" id="toggleRegister" type="button">Регистрация по приглашению</button>
+<button class="linkbutton" id="toggleRegister" type="button">Зарегистрироваться по email</button>
+<p id="authHelp">Сохранение пароля предлагается браузером. Сайт не хранит пароль в открытом виде.</p>
+<div class="divider">или</div>
+<button class="secondary google" id="googleLogin" type="button" disabled><strong>G</strong> Войти через Google</button>
 <p class="muted">Передача документов модели производится для анализа. Не вводите лишние персональные данные. Юридические выводы требуют проверки.</p>
 <div id="authError" class="error" role="alert"></div>
 </div></section>
@@ -82,7 +94,7 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <div class="brand"><img src="/chat/logo.svg" alt=""><b>AI Lawyer Kazakhstan</b></div>
 <button class="primary" id="createCase">+ Новое дело</button>
 <nav class="cases" id="caseList" aria-label="Дела"></nav>
-<div class="sidebar-footer"><span class="small" id="daily"></span><span class="small" id="who"></span><button class="secondary" id="logout">Выйти</button></div>
+<div class="sidebar-footer"><span class="small" id="daily"></span><span class="small" id="who"></span><button class="secondary" id="googleLink" hidden>Подключить Google</button><button class="secondary" id="logout">Выйти</button></div>
 </aside>
 <main>
 <header><div class="header-title" id="caseTitle">Выберите дело</div><div class="inline-tools">
