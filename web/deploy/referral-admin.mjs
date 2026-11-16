@@ -44,7 +44,7 @@ async function adminRequest(endpoint,method,body) {
 try{
   if(action==="create"){
     const partner=(arg||"").trim();
-    const maxRedemptions=limitRaw===undefined?20:Number(limitRaw);
+    const maxRedemptions=limitRaw===undefined?5:Number(limitRaw);
     if(partner.length<2||partner.length>70||!Number.isInteger(maxRedemptions)||
       maxRedemptions<1||maxRedemptions>1000)throw Error("Usage: create 'Partner Name' [max 1..1000]");
     const result=await adminRequest("/chat/api/admin/referrals","POST",{partner,maxRedemptions});
