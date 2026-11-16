@@ -325,7 +325,6 @@ async function api(req,res,url) {
   }
   if (req.method==="POST" && action==="chat") {
     rateLimit(req,"chat",40,60000);
-    if(countToday(u.id)>=DAILY_LIMIT) fail(429,"На сегодня достигнут лимит сообщений");
     const b=await bodyJson(req);
     const message=String(b.message||"").trim();
     const mode=["consult","audit","strategy","draft","review"].includes(b.mode)?b.mode:"consult";
@@ -337,6 +336,11 @@ async function api(req,res,url) {
       if(!d) fail(404,"Документ не найден в данном деле");
       return {...d,bytes:store.readFile(d.id)};
     });
+    const cost=aiTokenCost(mode,docs.length);
+    verifyCreditAccess(u,cost);
+    if(activeModelRequests.has(u.id))fail(429,"Другой запрос уже обрабатывается. Дождитесь ответа");
+    activeModelRequests.add(u.id);
+    try {
     const history=store.db.messages.filter(m=>m.caseId===id);
     const first=await askModel(baseRequest(c,history,message,docs,mode));
     let result=first;
@@ -352,20 +356,26 @@ async function api(req,res,url) {
     const time=now();
     store.db.messages.push({id:randomId(),caseId:id,role:"user",text:message,mode,createdAt:time});
     store.db.messages.push({id:randomId(),caseId:id,role:"assistant",text:result.text,sources:result.sources,mode,createdAt:now()});
-    c.updatedAt=now();charge(u.id);store.save();
-    return json(res,200,{answer:result.text,sources:result.sources,usedToday:countToday(u.id),rechecked:["strategy","review"].includes(mode)&&process.env.SECOND_PASS_ENABLED!=="0"});
+    c.updatedAt=now();completeCreditOperation(u,cost);store.save();
+    return json(res,200,{answer:result.text,sources:result.sources,cost,...profile(u),rechecked:["strategy","review"].includes(mode)&&process.env.SECOND_PASS_ENABLED!=="0"});
+    } finally {activeModelRequests.delete(u.id);}
   }
   if (req.method==="POST" && action==="compact") {
-    if(countToday(u.id)>=DAILY_LIMIT) fail(429,"На сегодня достигнут лимит");
+    const cost=aiTokenCost("compact");
+    verifyCreditAccess(u,cost);
+    if(activeModelRequests.has(u.id))fail(429,"Другой запрос уже обрабатывается. Дождитесь ответа");
     const messages=store.db.messages.filter(m=>m.caseId===id).slice(-80);
     if(!messages.length) fail(400,"В деле пока нет сообщений");
+    activeModelRequests.add(u.id);
+    try {
     const digest=await askModel({
       model:MODEL,store:false,max_output_tokens:3600,
       instructions:"Создай обновлённую структурированную, нейтральную карточку юридического дела на русском. Не выдумывай факты. Сохрани старые версии и противоречия, укажи источники если даны. Структура: ЦЕЛЬ; СТОРОНЫ; ДОКУМЕНТЫ; ХРОНОЛОГИЯ; ДОКАЗАННЫЕ ФАКТЫ; УТВЕРЖДЕНИЯ; ГИПОТЕЗЫ; ПРОТИВОРЕЧИЯ; НЕХВАТКА ДОКАЗАТЕЛЬСТВ; СРОКИ; ПРОЦЕССУАЛЬНЫЕ ВАРИАНТЫ; РИСКИ; СЛЕДУЮЩИЙ ШАГ. Никогда не выдавай гипотезу за факт.",
       input:`Название: ${c.title}\nЦель: ${c.objective}\nПрежняя карточка:\n${c.summary}\nИстория:\n${messages.map(m=>m.role+": "+m.text).join("\n\n").slice(-85000)}`,
     });
-    c.summary=digest.text.slice(0,30000);c.updatedAt=now();charge(u.id);store.save();
-    return json(res,200,{summary:c.summary,usedToday:countToday(u.id)});
+    c.summary=digest.text.slice(0,30000);c.updatedAt=now();completeCreditOperation(u,cost);store.save();
+    return json(res,200,{summary:c.summary,cost,...profile(u)});
+    } finally {activeModelRequests.delete(u.id);}
   }
   fail(404,"Неподдерживаемое действие");
 }
