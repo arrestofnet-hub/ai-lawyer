@@ -158,7 +158,7 @@ function completeCreditOperation(user,cost){
   charge(user.id,cost);
 }
 function profile(user){
-  return {balance:balanceOf(user),dailyUsed:countToday(user.id),dailyLimit:DAILY_LIMIT,priceUnit:"AI-токены",prices:{
+  return {balance:balanceOf(user),dailyUsed:user?countToday(user.id):0,dailyLimit:DAILY_LIMIT,priceUnit:"AI-токены",prices:{
     consult:aiTokenCost("consult"),audit:aiTokenCost("audit"),
     strategy:aiTokenCost("strategy"),draft:aiTokenCost("draft"),
     review:aiTokenCost("review"),compact:aiTokenCost("compact")
