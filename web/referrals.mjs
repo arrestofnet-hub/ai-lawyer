@@ -25,7 +25,7 @@ export function campaignByCode(db,raw) {
   return code&&(db.referrals||[]).find(x=>x.code===code&&x.active===true&&
     x.redemptions<x.maxRedemptions)||null;
 }
-export function createCampaign(db,{partner,maxRedemptions=20}) {
+export function createCampaign(db,{partner,maxRedemptions=5}) {
   const name=String(partner||"").trim();
   if(name.length<2||name.length>70)throw Error("Укажите название рекламного партнёра (2–70 символов)");
   if(!Number.isInteger(maxRedemptions)||maxRedemptions<1||maxRedemptions>1000)
