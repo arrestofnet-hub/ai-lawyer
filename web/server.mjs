@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
+import { exportDocx, exportPdf } from "./export.mjs";
 import {
   Store, MAX_FILE_BYTES, MAX_MESSAGE_CHARS, MAX_CASES_PER_USER, MAX_DOCS_PER_CASE,
   validateEmail, validPassword, hashPassword, checkPassword, tokenHash, dataKey,
@@ -26,6 +27,7 @@ const now = () => new Date().toISOString();
 
 const HTML = fs.readFileSync(path.join(dirname, "public", "index.html"));
 const JS = fs.readFileSync(path.join(dirname, "public", "app.js"));
+const FORMAT_JS = fs.readFileSync(path.join(dirname, "format.mjs"));
 const logo = fs.readFileSync(path.join(dirname, "..", "assets", "logo.svg"));
 
 function json(res, status, value, extra = {}) {
@@ -282,6 +284,9 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==="GET" && url.pathname==="/chat/app.js"){
       res.writeHead(200,{"content-type":"text/javascript; charset=utf-8"});return res.end(JS);
     }
+    if(req.method==="GET" && url.pathname==="/chat/format.js"){
+      res.writeHead(200,{"content-type":"text/javascript; charset=utf-8"});return res.end(FORMAT_JS);
+    }
     if(req.method==="GET" && url.pathname==="/chat/logo.svg"){
       res.writeHead(200,{"content-type":"image/svg+xml"});return res.end(logo);
     }
@@ -290,6 +295,25 @@ const server=http.createServer(async(req,res)=>{
     }
     if(req.method!=="GET" && !["POST","PATCH","DELETE"].includes(req.method)) fail(405,"Метод не поддерживается");
     if(req.method!=="GET") sameOrigin(req);
+    const exportMatch=url.pathname.match(/^\\/chat\\/api\\/cases\\/([a-f0-9-]{36})\\/export\\/([a-f0-9-]{36})$/);
+    if(req.method==="GET" && exportMatch) {
+      const {c}=ownedCase(req,exportMatch[1]);
+      const message=store.db.messages.find(m=>m.caseId===c.id && m.id===exportMatch[2] && m.role==="assistant");
+      if(!message) fail(404,"Ответ не найден в этом деле");
+      const format=url.searchParams.get("format");
+      if(format!=="pdf" && format!=="docx") fail(400,"Поддерживаются Word (.docx) и PDF");
+      rateLimit(req,"export",25,60*60*1000);
+      const bytes=format==="pdf" ? await exportPdf(message.text) : await exportDocx(message.text);
+      const type=format==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      res.writeHead(200,{
+        "content-type":type,
+        "content-length":bytes.length,
+        "content-disposition":'attachment; filename="ai-lawyer-'+message.id.slice(0,8)+"."+format+'"',
+        "cache-control":"no-store",
+        "x-content-type-options":"nosniff"
+      });
+      return res.end(bytes);
+    }
     if(!url.pathname.startsWith("/chat/api/")) fail(404,"Ресурс не найден");
     await api(req,res,url);
   } catch(e){
