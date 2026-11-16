@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseLegalMarkdown, inlineTokens, plainText } from "../format.mjs";
+import { parseLegalMarkdown, inlineTokens, plainText, plainLegalText } from "../format.mjs";
 import { exportDocx, exportPdf } from "../export.mjs";
 
 const sample=`# Юридическое заключение
@@ -27,6 +27,11 @@ test("legal Markdown is parsed into readable, structured blocks",()=>{
   assert.equal(blocks[3].kind,"ordered");
   assert.equal(blocks[3].items.length,2);
   assert.equal(plainText("**Вывод:** риск"),"Вывод: риск");
+  const cleaned=plainLegalText(sample);
+  assert.ok(cleaned.includes("Вывод: необходимо проверить документы."));
+  assert.ok(cleaned.includes("Договор\tСумма не совпадает"));
+  assert.ok(!cleaned.includes("**"));
+  assert.ok(!cleaned.includes("|---|"));
   assert.ok(inlineTokens("**Важно:** документ").some(t=>t.kind==="strong"&&t.text==="Важно:"));
 });
 
