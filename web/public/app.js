@@ -1,6 +1,20 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { user:null, cases:[], current:null, mode:"consult", docIds:new Set(), busy:false, registered:false, dailyLimit:0 };
 const API = "/chat/api";
+const MODE_HELP = {
+  consult:"Консультация — предварительный разбор и ближайшее действие",
+  audit:"Противоречия — сопоставление документов, дат, сумм и позиций сторон",
+  strategy:"Стратегия — процессуальные варианты, риски и вторая проверка модели",
+  draft:"Документ — проект юридического текста (пока TXT, без Word/PDF)",
+  review:"Перепроверка — независимая проверка выводов второй моделью",
+};
+function updateSelectedCount() {
+  const count=state.docIds.size;
+  $("#selectedCount").textContent=count
+    ? "Выбрано файлов: " + count + " / 3"
+    : "Файлы не выбраны";
+}
+
 function showError(message, target="#notice") {
   const el=$(target); if(el) { el.textContent=String(message); el.style.color="#ac3434"; }
 }
@@ -49,6 +63,7 @@ function renderCaseList() {
 }
 function resetCase() {
   state.current=null;state.docIds.clear();
+  updateSelectedCount();
   $("#caseTitle").textContent="Выберите дело";
   $("#messages").replaceChildren();$("#docList").replaceChildren();
   $("#empty").style.display="block";$("#composer").hidden=true;
@@ -56,13 +71,17 @@ function resetCase() {
   ["#toggleDocs","#toggleSummary","#deleteCase"].forEach(s=>$(s).disabled=true);
   renderCaseList();
 }
-async function loadCase(id) {
+async function loadCase(id,{retainSelection=false}={}) {
   const data=await request("/cases/"+id);
-  state.current=data;state.docIds.clear();renderCaseList();
+  const selected=retainSelection?new Set(state.docIds):new Set();
+  const available=new Set(data.documents.map(d=>d.id));
+  state.current=data;
+  state.docIds=new Set([...selected].filter(docId=>available.has(docId)));
+  renderCaseList();
   $("#caseTitle").textContent=data.case.title;
   $("#empty").style.display="none";$("#composer").hidden=false;
   ["#toggleDocs","#toggleSummary","#deleteCase"].forEach(s=>$(s).disabled=false);
-  renderMessages();renderDocs();renderSummary();
+  renderMessages();renderDocs();renderSummary();updateSelectedCount();
 }
 function renderMessages() {
   const wrap=$("#messages");wrap.replaceChildren();
@@ -111,6 +130,7 @@ function renderDocs() {
     check.addEventListener("change",()=>{
       if(check.checked && state.docIds.size>=3){check.checked=false;showError("Одновременно можно выбрать до трёх документов");return;}
       check.checked?state.docIds.add(d.id):state.docIds.delete(d.id);
+      updateSelectedCount();
     });
     const label=document.createElement("label");label.textContent=d.filename;label.title=d.filename;
     const remove=document.createElement("button");remove.type="button";remove.textContent="×";remove.title="Удалить документ";
@@ -185,20 +205,35 @@ $("#toggleSummary").addEventListener("click",()=>{
 $("#modes").addEventListener("click",ev=>{
   const b=ev.target.closest("button[data-mode]");if(!b) return;
   state.mode=b.dataset.mode;
+  $("#modeHint").textContent=MODE_HELP[state.mode]||"";
   for(const e of $("#modes").querySelectorAll("button"))e.classList.toggle("selected",e===b);
 });
+$("#attachShortcut").addEventListener("click",()=>{
+  if(!state.current || state.busy) return;
+  $("#docPanel").style.display="block";
+  $("#uploadInput").click();
+});
 $("#uploadInput").addEventListener("change",async ev=>{
-  if(!state.current) return;
+  if(!state.current || state.busy) return;
   const id=state.current.case.id;
+  const selected=new Set(state.docIds);
+  let uploaded=0;
   for(const file of [...ev.target.files]) {
     if(file.size>7*1024*1024){showError("Превышен лимит 7 МБ: "+file.name);continue;}
     try{
-      await request("/cases/"+id+"/documents",{
+      const data=await request("/cases/"+id+"/documents",{
         method:"POST",body:file,headers:{"x-filename":encodeURIComponent(file.name)}
       });
+      uploaded++;
+      if(selected.size<3) selected.add(data.document.id);
     } catch(e){showError(file.name+": "+e.message);}
   }
-  ev.target.value="";await loadCase(id);$("#docPanel").style.display="block";
+  state.docIds=selected;
+  ev.target.value="";
+  await loadCase(id,{retainSelection:true});
+  $("#docPanel").style.display="block";
+  if(uploaded>3 && state.docIds.size===3)
+    showError("Загружено файлов: "+uploaded+". В запрос выбрано максимум 3; остальные сохранены в деле.");
 });
 $("#messageForm").addEventListener("submit",async ev=>{
   ev.preventDefault();if(state.busy||!state.current) return;
