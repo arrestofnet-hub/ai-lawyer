@@ -59,6 +59,12 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
     assert.match(html,/id="remember"/);
     assert.match(html,/id="googleLogin"/);
     assert.match(html,/id="verifyCode"/);
+    assert.match(html,/id="confirmPassword"/);
+    assert.match(html,/id="showPassword"/);
+    assert.match(html,/id="forgotPassword"/);
+    assert.match(html,/id="resetForm"/);
+    assert.match(html,/id="resetCode"/);
+    assert.match(html,/help@ailawyer.kz/);
     assert.match(html,/id="referralCode"/);
     assert.match(html,/id="referralHelp"/);
     assert.match(html,/id="legacyInviteToggle"/);
@@ -85,6 +91,17 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
       body:JSON.stringify({email:"unverified@example.kz",password:"valid-password-123",referralCode:campaign.campaign.code})
     });
     assert.equal(blockedEmail.status,503,"email signup remains disabled without SMTP");
+
+    const noRecovery=await fetch(base+"/chat/api/auth/password-reset-start",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({email:"a@example.kz"})
+    });
+    assert.equal(noRecovery.status,503,"reset requires email service");
+    const noResetComplete=await fetch(base+"/chat/api/auth/password-reset-complete",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({email:"a@example.kz",code:"123456",password:"long-new-password"})
+    });
+    assert.equal(noResetComplete.status,503);
 
     const regularLogin=await fetch(base+"/chat/api/auth/login",{
       method:"POST",headers:{"content-type":"application/json"},
