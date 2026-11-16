@@ -20,6 +20,6 @@ jobs:
       - name: Syntax
         run: cd web && npm run check
       - name: VPS installer syntax
-        run: bash -n web/deploy/install-vps.sh
+        run: bash -n web/deploy/install-vps.sh web/deploy/enable-chat-nginx.sh
       - name: Unit tests
         run: cd web && npm test
