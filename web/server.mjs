@@ -12,7 +12,7 @@ import {
 } from "./referrals.mjs";
 import {
   googleEnabled, mailEnabled, googleStart, googleIdentity, verifyGoogleCookie, clearGoogleCookie,
-  newEmailCode, emailCodeHash, emailCodeMatches, sendVerificationCode
+  newEmailCode, emailCodeHash, emailCodeMatches, sendVerificationCode, sendPasswordResetCode
 } from "./auth.mjs";
 import {
   Store, MAX_FILE_BYTES, MAX_MESSAGE_CHARS, MAX_CASES_PER_USER, MAX_DOCS_PER_CASE,
@@ -261,6 +261,52 @@ async function api(req,res,url) {
       referralSource:pending.referralSource||null};
     store.db.users.push(u);store.save();newSession(u,res,pending.remember);
     return json(res,201,{user:safeUser(u)});
+  }
+  // Password reset always verifies control of the registered email address.
+  // Never reveal whether an email belongs to an account.
+  if (req.method === "POST" && p === "/chat/api/auth/password-reset-start") {
+    if(!mailEnabled())fail(503,"Восстановление пароля временно недоступно");
+    rateLimit(req,"password-reset-start",3,60*60000);
+    const b=await bodyJson(req),email=validateEmail(b.email);
+    if(!email)fail(400,"Укажите корректный email");
+    const user=store.db.users.find(u=>u.email===email);
+    store.db.passwordResets=(store.db.passwordResets||[]).filter(x=>x.expiresAt>Date.now()&&x.email!==email);
+    if(user){
+      const code=newEmailCode();
+      store.db.passwordResets.push({
+        email,userId:user.id,codeHash:emailCodeHash(email,code,KEY),
+        expiresAt:Date.now()+15*60000,attempts:0
+      });
+      store.save();
+      try{await sendPasswordResetCode(email,code);}
+      catch{
+        store.db.passwordResets=store.db.passwordResets.filter(x=>x.email!==email);
+        store.save();
+        // An SMTP failure must not disclose whether this account exists.
+      }
+    }
+    return json(res,200,{message:"Если адрес зарегистрирован, мы отправили код восстановления. Проверьте входящие и спам."});
+  }
+  if (req.method === "POST" && p === "/chat/api/auth/password-reset-complete") {
+    if(!mailEnabled())fail(503,"Восстановление пароля временно недоступно");
+    rateLimit(req,"password-reset-complete",10,15*60000);
+    const b=await bodyJson(req),email=validateEmail(b.email);
+    if(!email||!validPassword(b.password)||!/^[0-9]{6}$/.test(String(b.code||"")))
+      fail(400,"Проверьте email, шестизначный код и новый пароль (минимум 12 символов)");
+    const pending=(store.db.passwordResets||[]).find(x=>x.email===email&&x.expiresAt>Date.now());
+    if(!pending)fail(400,"Неверный или истёкший код восстановления");
+    pending.attempts++;
+    const verified=pending.attempts<=5&&emailCodeMatches(email,b.code,pending.codeHash,KEY);
+    if(verified||pending.attempts>=5)
+      store.db.passwordResets=store.db.passwordResets.filter(x=>x.email!==email);
+    if(!verified){store.save();fail(400,"Неверный или истёкший код восстановления");}
+    const user=store.db.users.find(u=>u.id===pending.userId&&u.email===email);
+    if(!user){store.save();fail(400,"Неверный или истёкший код восстановления");}
+    user.pass=hashPassword(b.password);
+    user.passwordChangedAt=now();
+    store.db.sessions=store.db.sessions.filter(x=>x.userId!==user.id);
+    store.save();
+    return json(res,200,{ok:true,message:"Пароль изменён. Войдите с новым паролем."});
   }
   if (req.method === "POST" && p === "/chat/api/auth/login") {
     rateLimit(req,"auth",8,15*60000);
