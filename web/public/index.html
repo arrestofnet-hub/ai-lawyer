@@ -15,6 +15,13 @@ input:focus,textarea:focus{border-color:#2971bb;box-shadow:0 0 0 3px #2d77be20}
 .authbox input:not([type="checkbox"]){margin-top:12px}.authbox .primary{width:100%;margin-top:14px}
 .authbox .remember{margin-top:14px;display:flex;gap:10px;align-items:center;font-size:14px;color:#304763}
 .authbox .remember input{width:auto;margin:0;accent-color:#173c68}
+.authbox .password-tools{margin-top:10px;display:flex;align-items:center;gap:9px;font-size:13px;color:#304763;cursor:pointer}
+.authbox .password-tools input{width:auto;margin:0;accent-color:#173c68}
+.authbox .field-note{margin:6px 0 0;color:#66758a;font-size:12px}
+.authbox .field-note.invalid{color:#ac3434}
+.authbox [hidden]{display:none!important}
+.authbox .support-link{display:block;text-align:center;margin-top:12px;font-size:13px}
+.sidebar-footer .support-link{font-size:13px}
 .authbox .google{width:100%;margin-top:11px;background:#fff;color:#253954;display:flex;align-items:center;justify-content:center;gap:10px}
 .authbox .google:disabled{opacity:.55;cursor:not-allowed}
 .authbox .divider{display:flex;align-items:center;gap:12px;margin:16px 0 7px;color:#7b8797;font-size:12px}
@@ -77,6 +84,11 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <form id="authForm" autocomplete="on">
 <input id="email" name="username" type="email" autocomplete="username" placeholder="Электронная почта" aria-label="Электронная почта" required>
 <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" placeholder="Пароль" aria-label="Пароль" required>
+<div id="confirmPasswordWrap" hidden>
+<input id="confirmPassword" name="confirm-password" type="password" autocomplete="new-password" minlength="12" placeholder="Повторите пароль" aria-label="Повторите пароль">
+<p id="confirmPasswordHelp" class="field-note" role="status">Повторите пароль для проверки</p>
+</div>
+<label class="password-tools" id="showPasswordWrap" for="showPassword"><input id="showPassword" type="checkbox"> Показать пароль</label>
 <div id="referralWrap" hidden>
 <input id="referralCode" name="referral" type="text" autocomplete="off" spellcheck="false" maxlength="20" placeholder="Партнёрский код (необязательно)" aria-label="Партнёрский код">
 <div class="small" id="referralHelp" style="padding:6px 2px 2px">Нет партнёрской ссылки? Оставьте поле пустым. По действующей ссылке — 50 бонусных AI-токенов после подтверждения email (50 обычных консультаций).</div>
@@ -89,6 +101,7 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 </form>
 <button class="linkbutton" id="toggleRegister" type="button">Зарегистрироваться по email</button>
 <p id="authHelp">Сохранение пароля предлагается браузером. Сайт не хранит пароль в открытом виде.</p>
+<a class="support-link" href="mailto:help@ailawyer.kz?subject=AI%20Lawyer%20Kazakhstan%20%E2%80%94%20%D0%BF%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%BA%D0%B0">Связаться с поддержкой</a>
 <div class="divider">или</div>
 <button class="secondary google" id="googleLogin" type="button" disabled><strong>G</strong> Войти через Google</button>
 <p class="muted">Передача документов модели производится для анализа. Не вводите лишние персональные данные. Юридические выводы требуют проверки.</p>
@@ -99,7 +112,7 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <div class="brand"><img src="/chat/logo.svg" alt=""><b>AI Lawyer Kazakhstan</b></div>
 <button class="primary" id="createCase">+ Новое дело</button>
 <nav class="cases" id="caseList" aria-label="Дела"></nav>
-<div class="sidebar-footer"><span class="small" id="daily" title="AI-токены — внутренние кредиты сервиса, не токены модели OpenAI"></span><span class="small" id="who"></span><button class="secondary" id="googleLink" hidden>Подключить Google</button><button class="secondary" id="logout">Выйти</button></div>
+<div class="sidebar-footer"><span class="small" id="daily" title="AI-токены — внутренние кредиты сервиса, не токены модели OpenAI"></span><span class="small" id="who"></span><a class="support-link" href="mailto:help@ailawyer.kz?subject=AI%20Lawyer%20Kazakhstan%20%E2%80%94%20%D0%BF%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%BA%D0%B0">Поддержка: help@ailawyer.kz</a><button class="secondary" id="googleLink" hidden>Подключить Google</button><button class="secondary" id="logout">Выйти</button></div>
 </aside>
 <main>
 <header><div class="header-title" id="caseTitle">Выберите дело</div><div class="inline-tools">
