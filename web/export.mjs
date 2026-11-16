@@ -1,0 +1,153 @@
+// Server-side Word/PDF exports of the selected assistant message.
+// Only the authenticated case owner can invoke these from server.mjs.
+import fs from "node:fs";
+import {
+  Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+  WidthType
+} from "docx";
+import { PDFDocument } from "pdfkit";
+import { parseLegalMarkdown, inlineTokens, plainText } from "./format.mjs";
+
+const cm=28.3464566929;
+const wordMargin={left:1701,right:567,top:1417,bottom:1134};
+function runs(text) {
+  return inlineTokens(text).map(token=>new TextRun({
+    text:token.text,font:"Times New Roman",size:28,
+    bold:token.kind==="strong",italics:token.kind==="em",
+  }));
+}
+function p(text,{bold=false,indent=true,after=115}={}) {
+  return new Paragraph({
+    children:bold?[new TextRun({text:plainText(text),bold:true,font:"Times New Roman",size:28})]:runs(text),
+    spacing:{line:322,after}, indent:indent?{firstLine:709}:undefined,
+  });
+}
+export async function exportDocx(markdown) {
+  const blocks=parseLegalMarkdown(markdown);
+  const content=[];
+  for(const block of blocks) {
+    if(block.kind==="heading") {
+      content.push(p(block.text,{bold:true,indent:false,after:150}));
+    } else if(block.kind==="ordered"||block.kind==="bullets") {
+      block.items.forEach((item,i)=>{
+        const prefix=block.kind==="ordered"?String(i+1)+". ":"• ";
+        content.push(p(prefix+item,{indent:false,after:65}));
+      });
+    } else if(block.kind==="table") {
+      const rowValues=[block.headers,...block.rows];
+      const rows=rowValues.map((row,rowIndex)=>new TableRow({
+        children:block.headers.map((_,index)=>new TableCell({
+          children:[p(row[index]||"",{indent:false,bold:rowIndex===0,after:50})]
+        }))
+      }));
+      content.push(new Table({rows,width:{size:100,type:WidthType.PERCENTAGE}}));
+      content.push(p("",{indent:false,after:60}));
+    } else if(block.kind==="code"||block.kind==="quote") {
+      content.push(p(block.text,{indent:false}));
+    } else {
+      const parts=block.text.split("\n");
+      parts.forEach((part,i)=>content.push(p(part,{indent:i===0,after:i===parts.length-1?115:0})));
+    }
+  }
+  if(!content.length)content.push(p("Документ пуст.",{indent:false}));
+  const doc=new Document({
+    creator:"AI Lawyer Kazakhstan",
+    title:"Юридический документ",
+    description:"Пользовательский экспорт ответа AI Lawyer Kazakhstan",
+    sections:[{properties:{page:{
+      size:{width:11906,height:16838},margin:wordMargin,
+    }},children:content}],
+  });
+  return Packer.toBuffer(doc);
+}
+
+const regularFontCandidates=[
+  "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf",
+  "/usr/share/fonts/truetype/msttcorefonts/times.ttf",
+  "/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf",
+  "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+  "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+  "/usr/share/fonts/truetype/noto/NotoSerif-Regular.ttf",
+];
+const boldFontCandidates=[
+  "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman_Bold.ttf",
+  "/usr/share/fonts/truetype/msttcorefonts/timesbd.ttf",
+  "/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf",
+  "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+  "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+  "/usr/share/fonts/truetype/noto/NotoSerif-Bold.ttf",
+];
+function fontPath(override,candidates) {
+  if(override && fs.existsSync(override))return override;
+  return candidates.find(p=>fs.existsSync(p));
+}
+export async function exportPdf(markdown) {
+  const normal=fontPath(process.env.PDF_FONT_REGULAR,regularFontCandidates);
+  if(!normal) {
+    const err=new Error("Для создания PDF на сервере нужно установить шрифты с поддержкой кириллицы: fonts-dejavu-core");
+    err.status=503;throw err;
+  }
+  const bold=fontPath(process.env.PDF_FONT_BOLD,boldFontCandidates)||normal;
+  const pdf=new PDFDocument({
+    size:"A4",
+    margins:{left:3*cm,right:1*cm,top:2.5*cm,bottom:2*cm},
+    bufferPages:false,info:{Title:"Юридический документ",Author:"AI Lawyer Kazakhstan"}
+  });
+  const output=new Promise((resolve,reject)=>{
+    const chunks=[];
+    pdf.on("data",chunk=>chunks.push(chunk));
+    pdf.on("end",()=>resolve(Buffer.concat(chunks)));
+    pdf.on("error",reject);
+  });
+  pdf.registerFont("main",normal);
+  pdf.registerFont("bold",bold);
+  const marginLeft=3*cm;
+  const usableWidth=pdf.page.width-(4*cm);
+  function ensurePage(height=35) {
+    if(pdf.y+height>pdf.page.height-2*cm) pdf.addPage();
+  }
+  function sectionText(text,{heading=false,indent=false,prefix="",size=14}={}){
+    ensurePage();
+    pdf.font(heading?"bold":"main").fontSize(size).fillColor("#151515");
+    const options={width:usableWidth,lineGap:2,paragraphGap:heading?10:7,align:heading?"left":"justify",indent:indent?1.25*cm:0};
+    pdf.text(prefix+plainText(text),marginLeft,pdf.y,options);
+    pdf.moveDown(heading?0.25:0.12);
+  }
+  function drawTable(block) {
+    const n=block.headers.length;
+    if(!n) return;
+    const colWidth=usableWidth/n;
+    const data=[block.headers,...block.rows];
+    for(let i=0;i<data.length;i++) {
+      const row=data[i];
+      pdf.font(i===0?"bold":"main").fontSize(10);
+      const height=Math.max(28,...row.slice(0,n).map(t=>pdf.heightOfString(String(t||""),{
+        width:colWidth-12,lineGap:1
+      })+12));
+      ensurePage(Math.min(height,450));
+      const y=pdf.y;
+      if(i===0)pdf.fillColor("#edf1f7").rect(marginLeft,y,usableWidth,height).fill();
+      for(let col=0;col<n;col++) {
+        const x=marginLeft+col*colWidth;
+        pdf.lineWidth(0.45).strokeColor("#c7ced7").rect(x,y,colWidth,height).stroke();
+        pdf.font(i===0?"bold":"main").fillColor("#151515").fontSize(10);
+        pdf.text(String(row[col]||""),x+6,y+6,{
+          width:colWidth-12,height:height-10,lineGap:1
+        });
+      }
+      pdf.y=y+height;
+    }
+    pdf.moveDown(0.45);
+  }
+  for(const block of parseLegalMarkdown(markdown)){
+    if(block.kind==="heading")sectionText(block.text,{heading:true});
+    else if(block.kind==="ordered"||block.kind==="bullets"){
+      block.items.forEach((t,i)=>sectionText(t,{prefix:block.kind==="ordered"?(i+1)+". ":"• "}));
+    }
+    else if(block.kind==="table")drawTable(block);
+    else if(block.kind==="code"||block.kind==="quote")sectionText(block.text,{size:12});
+    else block.text.split("\n").forEach((line,i)=>sectionText(line,{indent:i===0}));
+  }
+  pdf.end();
+  return output;
+}
