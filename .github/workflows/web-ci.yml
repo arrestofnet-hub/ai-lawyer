@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install export libraries
+        run: cd web && npm install --omit=dev --no-package-lock --ignore-scripts --no-audit --no-fund
       - name: Syntax
         run: cd web && npm run check && node --check deploy/diagnose-openai.mjs
       - name: VPS installer syntax
