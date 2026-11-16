@@ -179,6 +179,15 @@ async function api(req,res,url) {
       googleEnabled:googleEnabled()
     });
   }
+  if(p==="/chat/api/admin/referrals/disable"&&req.method==="POST"){
+    if(!adminAuthorized(req.socket.remoteAddress,req.headers["x-ai-lawyer-admin-key"],process.env.REFERRAL_ADMIN_KEY))
+      fail(403,"Administrative access denied");
+    const b=await bodyJson(req),code=normalizeReferral(b.code);
+    const campaign=(store.db.referrals||[]).find(x=>x.code===code);
+    if(!campaign)fail(404,"Кампания не найдена");
+    campaign.active=false;campaign.disabledAt=now();store.save();
+    return json(res,200,{code,disabled:true});
+  }
   if(p==="/chat/api/admin/referrals"&&["POST","GET"].includes(req.method)){
     if(!adminAuthorized(req.socket.remoteAddress,req.headers["x-ai-lawyer-admin-key"],process.env.REFERRAL_ADMIN_KEY))
       fail(403,"Administrative access denied");
