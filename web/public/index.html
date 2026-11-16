@@ -77,7 +77,12 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <form id="authForm" autocomplete="on">
 <input id="email" name="username" type="email" autocomplete="username" placeholder="Электронная почта" aria-label="Электронная почта" required>
 <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" placeholder="Пароль" aria-label="Пароль" required>
-<input id="invite" name="invite" type="password" autocomplete="off" placeholder="Код приглашения для тестового доступа" aria-label="Код приглашения" hidden>
+<div id="referralWrap" hidden>
+<input id="referralCode" name="referral" type="text" autocomplete="off" spellcheck="false" maxlength="20" placeholder="Партнёрский код (необязательно)" aria-label="Партнёрский код">
+<div class="small" id="referralHelp" style="padding:6px 2px 2px">Нет партнёрской ссылки? Оставьте поле пустым. По действующей ссылке — 50 бонусных AI-токенов после подтверждения email (50 обычных консультаций).</div>
+</div>
+<button type="button" class="linkbutton" id="legacyInviteToggle" hidden>У меня есть тестовый код приглашения</button>
+<input id="invite" name="invite" type="password" autocomplete="off" placeholder="Тестовый код доступа" aria-label="Тестовый код доступа" hidden>
 <input id="verifyCode" name="one-time-code" type="text" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="Код из письма (6 цифр)" aria-label="Код подтверждения email" hidden>
 <label class="remember" for="remember"><input id="remember" name="remember" type="checkbox"> Запомнить меня на 30 дней</label>
 <button class="primary" id="authSubmit" type="submit">Войти</button>
@@ -94,7 +99,7 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <div class="brand"><img src="/chat/logo.svg" alt=""><b>AI Lawyer Kazakhstan</b></div>
 <button class="primary" id="createCase">+ Новое дело</button>
 <nav class="cases" id="caseList" aria-label="Дела"></nav>
-<div class="sidebar-footer"><span class="small" id="daily"></span><span class="small" id="who"></span><button class="secondary" id="googleLink" hidden>Подключить Google</button><button class="secondary" id="logout">Выйти</button></div>
+<div class="sidebar-footer"><span class="small" id="daily" title="AI-токены — внутренние кредиты сервиса, не токены модели OpenAI"></span><span class="small" id="who"></span><button class="secondary" id="googleLink" hidden>Подключить Google</button><button class="secondary" id="logout">Выйти</button></div>
 </aside>
 <main>
 <header><div class="header-title" id="caseTitle">Выберите дело</div><div class="inline-tools">
@@ -111,7 +116,7 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <button data-mode="consult" class="selected">Консультация</button><button data-mode="audit">Противоречия</button><button data-mode="strategy">Стратегия</button><button data-mode="draft">Документ</button><button data-mode="review">Перепроверка</button>
 </div>
 <form id="messageForm"><textarea id="messageInput" placeholder="Опишите задачу по делу" aria-label="Сообщение" maxlength="14000" required></textarea>
-<div class="composer-bottom"><div class="inline-tools"><button type="button" class="secondary" id="attachShortcut" title="Прикрепить PDF, Word, изображение или текстовый файл">📎 Прикрепить</button><span class="small" id="selectedCount">Файлы не выбраны</span></div><button type="submit" class="primary" id="send">Отправить</button></div><div class="small" id="modeHint" role="status" style="padding-top:7px">Консультация — предварительный разбор и ближайшее действие</div><div class="small" id="notice" role="status" style="padding-top:5px">AI может ошибаться. Проверяйте нормы, сроки и документы.</div>
+<div class="composer-bottom"><div class="inline-tools"><button type="button" class="secondary" id="attachShortcut" title="Прикрепить PDF, Word, изображение или текстовый файл">📎 Прикрепить</button><span class="small" id="selectedCount">Файлы не выбраны</span></div><button type="submit" class="primary" id="send">Отправить</button></div><div class="small" id="modeHint" role="status" style="padding-top:7px">Консультация — предварительный разбор. 1 AI-токен</div><div class="small" id="notice" role="status" style="padding-top:5px">AI может ошибаться. Проверяйте нормы, сроки и документы.</div>
 </form>
 </div>
 </section></main>
