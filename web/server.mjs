@@ -205,6 +205,9 @@ async function api(req,res,url) {
     });
   }
   if (req.method === "POST" && p === "/chat/api/auth/register") {
+    // Once SMTP is connected, bypassing email verification via the old shared
+    // invitation code must not be possible. Existing accounts still log in.
+    if(mailEnabled())fail(403,"Новые пользователи должны подтвердить email");
     rateLimit(req,"auth",8,15*60000);
     const b = await bodyJson(req), email = validateEmail(b.email);
     if (!process.env.SIGNUP_INVITE_CODE || b.invite !== process.env.SIGNUP_INVITE_CODE) fail(403,"Регистрация доступна только по приглашению");
