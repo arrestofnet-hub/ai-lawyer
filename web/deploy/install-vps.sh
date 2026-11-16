@@ -36,6 +36,11 @@ cd "$APP_DIR/web"
 npm run check
 npm test
 
+# The app runs as a sandboxed DynamicUser, not root. The installer uses umask 077
+# for secrets, so make public repository source files readable to the service.
+# All secrets and client data remain outside APP_DIR in protected paths.
+chmod -R a+rX "$APP_DIR"
+
 # Settings accessible only to root; key never enters the repository or terminal history.
 {
   printf 'NODE_ENV=production\n'
