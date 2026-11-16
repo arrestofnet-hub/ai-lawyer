@@ -1,4 +1,79 @@
+import { parseLegalMarkdown, inlineTokens } from "./format.js";
 const $ = (selector) => document.querySelector(selector);
+function inlineInto(node,text) {
+  for (const token of inlineTokens(text)) {
+    if(token.kind==="text") {node.append(document.createTextNode(token.text));continue;}
+    let child;
+    if(token.kind==="strong") child=document.createElement("strong");
+    else if(token.kind==="em") child=document.createElement("em");
+    else if(token.kind==="code") child=document.createElement("code");
+    else if(token.kind==="link") {
+      child=document.createElement("a");
+      try {
+        const url=new URL(token.url);
+        if(!["https:","http:"].includes(url.protocol)) throw Error("Unsafe URL");
+        child.href=url.href;child.target="_blank";child.rel="noopener noreferrer";
+      } catch {node.append(document.createTextNode(token.text));continue;}
+    } else {node.append(document.createTextNode(token.text));continue;}
+    child.textContent=token.text;node.append(child);
+  }
+}
+function formattedAnswer(text) {
+  const wrap=document.createElement("div");wrap.className="rendered";
+  for(const block of parseLegalMarkdown(text)) {
+    let el;
+    if(block.kind==="table") {
+      el=document.createElement("div");el.className="legal-table-wrap";
+      const table=document.createElement("table");
+      const header=document.createElement("tr");
+      for(const value of block.headers){
+        const th=document.createElement("th");th.textContent=value;header.append(th);
+      }
+      table.append(header);
+      for(const row of block.rows) {
+        const tr=document.createElement("tr");
+        for(let j=0;j<block.headers.length;j++) {
+          const td=document.createElement("td");td.textContent=row[j]||"";tr.append(td);
+        }
+        table.append(tr);
+      }
+      el.append(table);
+    } else if(block.kind==="ordered"||block.kind==="bullets") {
+      el=document.createElement(block.kind==="ordered"?"ol":"ul");
+      for(const item of block.items) {const li=document.createElement("li");inlineInto(li,item);el.append(li);}
+    } else if(block.kind==="heading") {
+      el=document.createElement("h"+Math.min(4,block.level));
+      el.textContent=block.text;
+    } else if(block.kind==="code") {
+      el=document.createElement("pre");el.textContent=block.text;
+    } else if(block.kind==="quote") {
+      el=document.createElement("blockquote");inlineInto(el,block.text);
+    } else {
+      el=document.createElement("p");inlineInto(el,block.text);
+    }
+    wrap.append(el);
+  }
+  return wrap;
+}
+async function downloadExport(caseId,messageId,format,button) {
+  const original=button.textContent;button.disabled=true;button.textContent="Создаём...";
+  try {
+    const response=await fetch(API+"/cases/"+encodeURIComponent(caseId)+"/export/"+encodeURIComponent(messageId)+"?format="+encodeURIComponent(format),{
+      credentials:"same-origin",cache:"no-store"
+    });
+    if(!response.ok){
+      const err=await response.json().catch(()=>({}));
+      throw Error(err.error||"Не удалось создать файл");
+    }
+    const blob=await response.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;
+    a.download="ai-lawyer-"+messageId.slice(0,8)+"."+format;
+    document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+  } catch(e) {showError(e.message);}
+  finally {button.disabled=false;button.textContent=original;}
+}
 const state = { user:null, cases:[], current:null, mode:"consult", docIds:new Set(), busy:false, registered:false, dailyLimit:0 };
 const API = "/chat/api";
 const MODE_HELP = {
@@ -92,7 +167,9 @@ function renderMessages() {
     const role=document.createElement("span");role.textContent=msg.role==="user"?"Клиент":"AI Lawyer";
     const stamp=document.createElement("span");stamp.textContent=new Date(msg.createdAt).toLocaleString("ru-RU");
     meta.append(role,stamp);block.append(meta);
-    const txt=document.createElement("div");txt.textContent=msg.text;block.append(txt);
+    block.append(msg.role==="assistant"?formattedAnswer(msg.text):(()=>{
+      const txt=document.createElement("div");txt.textContent=msg.text;return txt;
+    })());
     if(msg.sources?.length) {
       const src=document.createElement("div");src.className="sources";
       const title=document.createElement("b");title.textContent="Источники поиска:";src.append(title);
@@ -110,6 +187,11 @@ function renderMessages() {
       const save=document.createElement("button");save.className="linkbutton";save.textContent="Сохранить TXT";
       save.addEventListener("click",()=>downloadText(msg.text,"ai-lawyer-analysis.txt"));
       block.append(copy,save);
+      for(const [format,label] of [["docx","Скачать Word"],["pdf","Скачать PDF"]]){
+        const b=document.createElement("button");b.className="linkbutton";b.textContent=label;
+        b.addEventListener("click",()=>downloadExport(state.current.case.id,msg.id,format,b));
+        block.append(b);
+      }
     }
     wrap.append(block);
   }
