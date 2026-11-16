@@ -379,8 +379,7 @@ $("#authForm").addEventListener("submit",async ev=>{
     const enteredPassword=$("#password").value;
     if(remember&&enteredPassword)void offerBrowserPasswordSave(email,enteredPassword);
     $("#password").value="";$("#invite").value="";$("#verifyCode").value="";
-    await if(referralFromLink)$("#referralCode").value=referralFromLink;
-boot();
+    await boot();
   } catch(e) {showError(e.message,"#authError");}
   finally {submit.disabled=false;}
 });
@@ -456,4 +455,5 @@ $("#messageForm").addEventListener("submit",async ev=>{
 $("#messageInput").addEventListener("keydown",ev=>{
   if(ev.key==="Enter"&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();$("#messageForm").requestSubmit();}
 });
+if(referralFromLink)$("#referralCode").value=referralFromLink;
 boot();
