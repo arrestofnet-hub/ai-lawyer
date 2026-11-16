@@ -74,13 +74,21 @@ async function downloadExport(caseId,messageId,format,button) {
   } catch(e) {showError(e.message);}
   finally {button.disabled=false;button.textContent=original;}
 }
-const state = { user:null, cases:[], current:null, mode:"consult", docIds:new Set(), busy:false, registered:false, awaitingCode:false, signupMode:"invite", googleEnabled:false, dailyLimit:0 };
+const state = { user:null, cases:[], current:null, mode:"consult", docIds:new Set(),
+  busy:false, registered:false, awaitingCode:false, signupMode:"invite",
+  legacyInviteVisible:false, googleEnabled:false, dailyLimit:0,balance:null,
+  prices:{consult:1,audit:6,strategy:8,draft:6,review:8,compact:2}
+};
+const incomingParams=new URLSearchParams(location.search);
+const referralFromLink=(incomingParams.get("ref")||"").trim().toUpperCase().slice(0,20);
+const sourceFromLink=(incomingParams.get("utm_source")||"").replace(/[^a-zA-Z0-9_.-]/g,"").slice(0,60);
+
 const API = "/chat/api";
 const MODE_HELP = {
   consult:"Консультация — предварительный разбор и ближайшее действие",
   audit:"Противоречия — сопоставление документов, дат, сумм и позиций сторон",
   strategy:"Стратегия — процессуальные варианты, риски и вторая проверка модели",
-  draft:"Документ — проект юридического текста (пока TXT, без Word/PDF)",
+  draft:"Документ — проект для копирования и выгрузки Word/PDF",
   review:"Перепроверка — независимая проверка выводов второй моделью",
 };
 function updateSelectedCount() {
@@ -88,6 +96,7 @@ function updateSelectedCount() {
   $("#selectedCount").textContent=count
     ? "Выбрано файлов: " + count + " / 3"
     : "Файлы не выбраны";
+  updateModeHint();
 }
 
 function showError(message, target="#notice") {
@@ -111,25 +120,40 @@ function authView(isAuthed) {
 function updateAuthUi() {
   const registration=state.registered;
   const requiresCode=state.awaitingCode;
-  $("#invite").hidden=!registration||state.signupMode!=="invite"||requiresCode;
-  $("#invite").required=registration&&state.signupMode==="invite"&&!requiresCode;
+  const legacy=registration&&state.signupMode==="invite"&&!requiresCode;
+  $("#referralWrap").hidden=!registration||requiresCode;
+  $("#legacyInviteToggle").hidden=!legacy;
+  $("#legacyInviteToggle").textContent=state.legacyInviteVisible
+    ?"Скрыть поле тестового кода":"Есть тестовый код доступа";
+  $("#invite").hidden=!legacy||!state.legacyInviteVisible;
+  $("#invite").required=legacy&&state.legacyInviteVisible;
   $("#verifyCode").hidden=!requiresCode;
   $("#verifyCode").required=requiresCode;
   $("#password").hidden=requiresCode;
   $("#password").required=!requiresCode;
   $("#password").autocomplete=registration?"new-password":"current-password";
   $("#authSubmit").textContent=requiresCode?"Подтвердить email":registration?"Зарегистрироваться":"Войти";
+  // Until the SMTP mailbox is configured, registration stays invite-only.
+  $("#authSubmit").disabled=legacy&&!state.legacyInviteVisible;
   $("#toggleRegister").textContent=registration?"У меня уже есть аккаунт":"Зарегистрироваться по email";
   $("#toggleRegister").disabled=state.signupMode==="disabled"&&!registration;
   $("#googleLogin").disabled=!state.googleEnabled;
   $("#googleLogin").title=state.googleEnabled?"Вход через аккаунт Google":"Нужно подключить Google OAuth в настройках сервера";
   $("#authHelp").textContent=requiresCode
-    ?"Введите шестизначный код, отправленный на вашу электронную почту. Он действителен 15 минут."
-    :registration&&state.signupMode==="invite"
-      ?"Тестовая регистрация: укажите email, пароль и код приглашения. Свободная регистрация откроется после настройки почтового сервера."
-      :registration&&state.signupMode==="email"
-        ?"Мы отправим код подтверждения на указанный email. Пароль — минимум 12 символов."
-        :"При повторном входе укажите ту же почту, которую использовали при регистрации. Пароль может сохранить менеджер паролей браузера.";
+    ?"Введите шестизначный код из письма. Он действует 15 минут. Бонус по партнёрской ссылке начисляется только после подтверждения email."
+    :legacy?"Подтверждение электронной почты пока настраивается. Сейчас регистрация доступна тестировщикам со старым кодом доступа; партнёрский код необязателен."
+    :registration&&state.signupMode==="email"
+      ?"Мы отправим письмо с кодом подтверждения. Без партнёрской ссылки регистрация тоже доступна."
+      :registration?"Открытая регистрация будет доступна после подключения почтовой отправки."
+      :"Войдите с той же почтой, которую использовали при регистрации. Пароль можно сохранить в менеджере паролей браузера.";
+}
+function currentPrice(){
+  if(state.mode==="consult"&&state.docIds.size)return Math.max(3,state.docIds.size*3);
+  return state.prices[state.mode]||1;
+}
+function updateModeHint(){
+  const cost=currentPrice();
+  $("#modeHint").textContent=(MODE_HELP[state.mode]||"")+" · стоимость: "+cost+" AI-токен"+(cost===1?"":cost<5?"а":"ов")+" (внутренние кредиты)";
 }
 async function offerBrowserPasswordSave(email,password) {
   // Only the browser's password manager may save credentials after explicit opt-in.
@@ -162,6 +186,8 @@ async function boot() {
     const s=await request("/session");
     state.signupMode=s.signupMode||"invite";
     state.googleEnabled=!!s.googleEnabled;
+    state.prices=s.prices||state.prices;
+    state.balance=s.balance??null;
     updateAuthUi();
     if(!s.authenticated) {authView(false);oauthMessage();return;}
     state.user=s.user;state.dailyLimit=s.dailyLimit;
@@ -174,7 +200,11 @@ async function boot() {
 }
 async function loadCases(preferredId) {
   const data=await request("/cases");state.cases=data.cases;
-  $("#daily").textContent="Запросов сегодня: "+data.usedToday+" / "+state.dailyLimit;
+  state.balance=data.balance??null;
+  state.prices=data.prices||state.prices;
+  $("#daily").textContent="AI-токены сегодня: "+data.usedToday+" / "+state.dailyLimit+
+    (state.balance===null?"":" · Баланс: "+state.balance);
+  updateModeHint();
   renderCaseList();
   const target=preferredId||state.current?.case.id||data.cases[0]?.id;
   if(target && data.cases.some(c=>c.id===target)) await loadCase(target);
