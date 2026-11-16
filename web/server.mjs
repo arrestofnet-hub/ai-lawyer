@@ -197,7 +197,7 @@ async function api(req,res,url) {
     }))});
     const b=await bodyJson(req);
     let campaign;
-    try{campaign=createCampaign(store.db,{partner:b.partner,maxRedemptions:b.maxRedemptions??20});}
+    try{campaign=createCampaign(store.db,{partner:b.partner,maxRedemptions:b.maxRedemptions??5});}
     catch(e){fail(400,e.message);}
     store.save();
     return json(res,201,{
