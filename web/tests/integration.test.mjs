@@ -27,7 +27,16 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
     assert.equal(ready,true,"server should start");
     const page=await fetch(base+"/chat/");
     assert.equal(page.status,200);
-    assert.match(await page.text(),/AI Lawyer Kazakhstan/);
+    const html=await page.text();
+    assert.match(html,/AI Lawyer Kazakhstan/);
+    assert.match(html,/id="attachShortcut"/);
+    assert.match(html,/id="selectedCount"/);
+    assert.match(html,/id="modeHint"/);
+    const frontend=await fetch(base+"/chat/app.js");
+    assert.equal(frontend.status,200);
+    const js=await frontend.text();
+    assert.match(js,/updateSelectedCount/);
+    assert.match(js,/attachShortcut/);
     const make = async (email)=> {
       const r=await fetch(base+"/chat/api/auth/register",{method:"POST",
         headers:{"content-type":"application/json"},
