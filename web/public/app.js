@@ -349,6 +349,75 @@ function renderSummary() {
   });
   panel.append(refresh);
 }
+let resetStep="request";
+function showPasswordRecovery(show){
+  $("#loginOptions").hidden=show;
+  $("#resetPanel").hidden=!show;
+  if(show){
+    resetStep="request";
+    $("#resetEmail").value=$("#email").value.trim();
+    $("#resetEmail").readOnly=false;
+    $("#resetCodeWrap").hidden=true;
+    $("#resetCode").required=false;
+    $("#resetPassword").required=false;
+    $("#resetConfirm").required=false;
+    $("#resetCode").value="";
+    $("#resetPassword").value="";
+    $("#resetConfirm").value="";
+    $("#resetNotice").textContent="";
+    $("#resetError").textContent="";
+    $("#resetSubmit").textContent="Получить код";
+    $("#resetEmail").focus();
+  }else{
+    $("#resetCode").value="";
+    $("#resetPassword").value="";
+    $("#resetConfirm").value="";
+    $("#resetShowPassword").checked=false;
+    $("#resetPassword").type="password";
+    $("#resetConfirm").type="password";
+  }
+}
+$("#forgotPassword").addEventListener("click",()=>showPasswordRecovery(true));
+$("#backToLogin").addEventListener("click",()=>showPasswordRecovery(false));
+$("#resetShowPassword").addEventListener("change",ev=>{
+  const type=ev.target.checked?"text":"password";
+  $("#resetPassword").type=type;
+  $("#resetConfirm").type=type;
+});
+$("#resetForm").addEventListener("submit",async ev=>{
+  ev.preventDefault();
+  const button=$("#resetSubmit");
+  button.disabled=true;
+  $("#resetError").textContent="";
+  try{
+    const email=$("#resetEmail").value.trim();
+    if(resetStep==="request"){
+      const result=await post("/auth/password-reset-start",{email});
+      resetStep="complete";
+      $("#resetEmail").readOnly=true;
+      $("#resetCodeWrap").hidden=false;
+      $("#resetCode").required=true;
+      $("#resetPassword").required=true;
+      $("#resetConfirm").required=true;
+      $("#resetSubmit").textContent="Изменить пароль";
+      $("#resetNotice").textContent=result.message+" Код действует 15 минут. Если письмо не пришло, проверьте адрес.";
+      $("#resetCode").focus();
+    } else {
+      const password=$("#resetPassword").value;
+      if(password!==$("#resetConfirm").value)
+        throw Error("Новые пароли не совпадают");
+      const result=await post("/auth/password-reset-complete",{
+        email,code:$("#resetCode").value.trim(),password
+      });
+      showPasswordRecovery(false);
+      $("#email").value=email;
+      $("#password").value="";
+      $("#authError").style.color="#276444";
+      $("#authError").textContent=result.message;
+    }
+  }catch(e){showError(e.message,"#resetError");}
+  finally{button.disabled=false;}
+});
 $("#showPassword").addEventListener("change",ev=>{
   const type=ev.target.checked?"text":"password";
   $("#password").type=type;
