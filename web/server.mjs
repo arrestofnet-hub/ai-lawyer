@@ -388,6 +388,8 @@ async function api(req,res,url) {
     const pending=(store.db.pendingSignups||[]).find(x=>x.email===email&&x.expiresAt>Date.now());
     if(!pending)fail(400,"Код отсутствует или истёк. Запросите новый");
     ensureGuestIdle(req);
+    if(pending.guestHash && guestRequests.has(pending.guestHash))
+      fail(409,"Дождитесь окончания гостевого ответа и повторите регистрацию");
     pending.attempts++;
     const success=pending.attempts<=5&&emailCodeMatches(email,b.code,pending.codeHash,KEY);
     if(pending.attempts>=5||success)store.db.pendingSignups=store.db.pendingSignups.filter(x=>x!==pending);
@@ -400,8 +402,6 @@ async function api(req,res,url) {
     const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now(),
       credits:grant.credits,accountType:"trial",referralCode:grant.referralCode,
       referralSource:pending.referralSource||null};
-    if(pending.guestHash && guestRequests.has(pending.guestHash))
-      fail(409,"Дождитесь окончания гостевого ответа и повторите регистрацию");
     store.db.users.push(u);
     const guestCaseId=saveGuestConversation(req,u,pending.guestHash);
     store.save();newSession(u,res,pending.remember);
