@@ -83,7 +83,9 @@ export class Store {
     return { id:c.id, title:c.title, objective:c.objective, summary:c.summary, createdAt:c.createdAt, updatedAt:c.updatedAt };
   }
   publicDocument(d) { return { id:d.id, filename:d.filename, type:d.type, size:d.size, createdAt:d.createdAt }; }
-  publicMessage(m) { return { id:m.id, role:m.role, text:m.text, mode:m.mode, sources:m.sources || [], createdAt:m.createdAt }; }
+  publicMessage(m) { return { id:m.id, role:m.role, text:m.text, mode:m.mode,
+    ...(m.requestId?{requestId:m.requestId}:{}),
+    sources:m.sources || [], createdAt:m.createdAt }; }
 }
 
 export function classifyFile(filename, data) {
