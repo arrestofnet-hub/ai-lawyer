@@ -31,6 +31,12 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
 const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
 const DAILY_LIMIT = Math.max(1, Number(process.env.MAX_MESSAGES_PER_DAY || 25));
 const MAX_USER_DOCS_PER_CHAT = 3;
+const GUEST_LIMIT = 20;
+const GUEST_REMINDER = 5;
+const GUEST_MAX_AGE = 90 * 86400;
+const GUEST_ENABLED = process.env.GUEST_CHAT_ENABLED !== "0";
+const GUEST_CASE = { title:"Гостевая консультация", objective:"", summary:"" };
+const guestRequests = new Set();
 const throttle = new Map();
 const activeModelRequests=new Set();
 const now = () => new Date().toISOString();
@@ -104,6 +110,70 @@ function rateLimit(req, bucket, limit, ms) {
   if (entry.count > limit) fail(429,"Слишком много запросов");
   if (throttle.size > 5000) for (const [key,value] of throttle) if (value.reset < Date.now()) throttle.delete(key);
 }
+function guestFor(req) {
+  const token = cookies(req).al_guest;
+  if (!/^[a-f0-9]{64}$/.test(token || "")) return null;
+  const hash = tokenHash(token);
+  return (store.db.guests || []).find(g => g.hash === hash && g.expiresAt > Date.now()) || null;
+}
+function guestStatus(guest) {
+  const used = guest?.used || 0;
+  return { used, remaining:GUEST_LIMIT-used, limit:GUEST_LIMIT,
+    reminderAt:GUEST_REMINDER, messages:guest?.messages.map(m=>store.publicMessage(m)) || [] };
+}
+function openGuest(req,res) {
+  const guest = guestFor(req);
+  if (guest) return json(res,200,guestStatus(guest));
+  rateLimit(req,"guest-start",20,60*60000);
+  const token = crypto.randomBytes(32).toString("hex");
+  const created = {hash:tokenHash(token),expiresAt:Date.now()+GUEST_MAX_AGE*1000,used:0,messages:[]};
+  store.db.guests = (store.db.guests || []).filter(g=>g.expiresAt>Date.now());
+  store.db.guests.push(created);
+  store.save();
+  const secure = ORIGIN.startsWith("https:") ? "; Secure" : "";
+  return json(res,200,guestStatus(created),{
+    "set-cookie":`al_guest=${token}; HttpOnly; SameSite=Lax; Path=/chat/; Max-Age=${GUEST_MAX_AGE}${secure}`
+  });
+}
+function ensureGuestIdle(req) {
+  if (guestRequests.has(guestFor(req)?.hash))
+    fail(409,"Дождитесь ответа на гостевой вопрос и повторите регистрацию");
+}
+function saveGuestConversation(req,user) {
+  const guest = guestFor(req);
+  if (!guest?.messages.length) return;
+  const id = randomId(), time = now();
+  store.db.cases.push({...GUEST_CASE,id,ownerId:user.id,createdAt:time,updatedAt:time});
+  store.db.messages.push(...guest.messages.map(m=>({...m,caseId:id})));
+  guest.messages = [];
+}
+async function guestChat(req,res) {
+  const body = await bodyJson(req);
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+  if (!message || message.length > MAX_MESSAGE_CHARS) fail(400,"Сообщение пустое или слишком длинное");
+  const guest = guestFor(req);
+  if (!guest) fail(409,"Обновите страницу, чтобы открыть гостевой чат");
+  if (guest.used >= GUEST_LIMIT) return json(res,403,{
+    error:"Для продолжения зарегистрируйтесь или войдите",guest:guestStatus(guest)
+  });
+  if (guestRequests.has(guest.hash) || guestRequests.size >= 6)
+    fail(429,"Гостевой чат занят. Дождитесь ответа или повторите немного позже");
+  rateLimit(req,"guest-chat",80,60*60000);
+  guestRequests.add(guest.hash);
+  try {
+    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],"consult",true));
+    const previousMessages = guest.messages;
+    guest.messages = [...previousMessages,
+      {id:randomId(),role:"user",text:message,mode:"consult",createdAt:now()},
+      {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode:"consult",createdAt:now()}];
+    guest.used++;
+    try { store.save(); }
+    catch (error) { guest.used--; guest.messages=previousMessages; throw error; }
+    return json(res,200,guestStatus(guest));
+  } finally {
+    guestRequests.delete(guest.hash);
+  }
+}
 function ownedCase(req, id) {
   const u = requireUser(req), c = store.getCase(u.id, id);
   if (!c) fail(404,"Дело не найдено");
@@ -176,8 +246,14 @@ async function api(req,res,url) {
       emailVerificationEnabled:mailEnabled(),referralBonus:REFERRAL_BONUS,
       prices:profile(user).prices,
       ...(user?profile(user):{}),
-      googleEnabled:googleEnabled()
+      googleEnabled:googleEnabled(), guestEnabled:GUEST_ENABLED, trialCredits:TRIAL_CREDITS
     });
+  }
+  if (GUEST_ENABLED && (p === "/chat/api/guest" || p === "/chat/api/guest/chat")) {
+    if (sessionFor(req)) fail(409,"Вы уже вошли в кабинет");
+    if (req.method === "GET" && p.endsWith("/guest")) return openGuest(req,res);
+    if (req.method === "POST" && p.endsWith("/chat")) return guestChat(req,res);
+    fail(405,"Метод не поддерживается");
   }
   if(p==="/chat/api/admin/referrals/disable"&&req.method==="POST"){
     if(!adminAuthorized(req.socket.remoteAddress,req.headers["x-ai-lawyer-admin-key"],process.env.REFERRAL_ADMIN_KEY))
@@ -213,8 +289,9 @@ async function api(req,res,url) {
     if (!process.env.SIGNUP_INVITE_CODE || b.invite !== process.env.SIGNUP_INVITE_CODE) fail(403,"Регистрация доступна только по приглашению");
     if (!email || !validPassword(b.password)) fail(400,"Нужны корректная почта и пароль не короче 12 символов");
     if (store.db.users.some(u=>u.email===email)) fail(409,"Адрес уже зарегистрирован");
+    ensureGuestIdle(req);
     const u={id:randomId(), email, pass:hashPassword(b.password), createdAt:now()};
-    store.db.users.push(u); store.save(); newSession(u,res,b.remember===true);
+    store.db.users.push(u); saveGuestConversation(req,u); store.save(); newSession(u,res,b.remember===true);
     return json(res,201,{user:safeUser(u)});
   }
   if (req.method === "POST" && p === "/chat/api/auth/email-start") {
@@ -247,6 +324,7 @@ async function api(req,res,url) {
     if(!email)fail(400,"Некорректный email");
     const pending=(store.db.pendingSignups||[]).find(x=>x.email===email&&x.expiresAt>Date.now());
     if(!pending)fail(400,"Код отсутствует или истёк. Запросите новый");
+    ensureGuestIdle(req);
     pending.attempts++;
     const success=pending.attempts<=5&&emailCodeMatches(email,b.code,pending.codeHash,KEY);
     if(pending.attempts>=5||success)store.db.pendingSignups=store.db.pendingSignups.filter(x=>x!==pending);
@@ -259,7 +337,7 @@ async function api(req,res,url) {
     const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now(),
       credits:grant.credits,accountType:"trial",referralCode:grant.referralCode,
       referralSource:pending.referralSource||null};
-    store.db.users.push(u);store.save();newSession(u,res,pending.remember);
+    store.db.users.push(u);saveGuestConversation(req,u);store.save();newSession(u,res,pending.remember);
     return json(res,201,{user:safeUser(u)});
   }
   // Password reset always verifies control of the registered email address.
@@ -492,7 +570,7 @@ const server=http.createServer(async(req,res)=>{
           throw Error("OAuth state mismatch");
         if(url.searchParams.has("error"))throw Error("Google authentication declined");
         const identity=await googleIdentity(url.searchParams.get("code"),flow,ORIGIN);
-        let user;
+        let user, registered=false;
         if(flow.linkUserId){
           const validSession=store.db.sessions.some(x=>x.userId===flow.linkUserId&&
             x.hash===flow.linkSessionHash&&x.expiresAt>Date.now());
@@ -512,18 +590,21 @@ const server=http.createServer(async(req,res)=>{
               return res.end();
             }
             if(process.env.GOOGLE_SIGNUP_ENABLED!=="1")throw Error("New Google registration not enabled");
+            ensureGuestIdle(req);
             const grant=allocateVerifiedRegistration(store.db,flow.referralCode);
             user={id:randomId(),email:identity.email,pass:null,googleSub:identity.sub,
               emailVerified:true,createdAt:now(),credits:grant.credits,
               accountType:"trial",referralCode:grant.referralCode,
               referralSource:flow.referralSource||null};
-            store.db.users.push(user);store.save();
+            store.db.users.push(user);saveGuestConversation(req,user);store.save();
+            registered=true;
           }
         }
         newSession(user,res,flow.remember);
         const set=res.getHeader("set-cookie");
         res.setHeader("set-cookie",[set,clearGoogleCookie(ORIGIN.startsWith("https:"))]);
-        res.writeHead(303,{"location":ORIGIN+"/chat/"+(flow.linkUserId?"?auth_notice=google_linked":"")});
+        const notice=flow.linkUserId?"?auth_notice=google_linked":registered?"?auth_notice=google_registered":"";
+        res.writeHead(303,{"location":ORIGIN+"/chat/"+notice});
         return res.end();
       }catch{
         res.writeHead(303,{"location":ORIGIN+"/chat/?auth_error=google_login_failed",
@@ -561,4 +642,4 @@ const server=http.createServer(async(req,res)=>{
     else res.end();
   }
 });
-server.listen(PORT,process.env.HOST||"127.0.0.1",()=>console.log("AI Lawyer web listening on",PORT));
+server.listen(PORT,process.env.HOST||"127.0.0.1",()=>console.log("AI Lawyer web listening on",server.address().port));

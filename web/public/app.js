@@ -74,7 +74,7 @@ async function downloadExport(caseId,messageId,format,button) {
   } catch(e) {showError(e.message);}
   finally {button.disabled=false;button.textContent=original;}
 }
-const state = { user:null, cases:[], current:null, mode:"consult", docIds:new Set(),
+const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(),
   busy:false, registered:false, awaitingCode:false, signupMode:"invite",
   legacyInviteVisible:false, googleEnabled:false, dailyLimit:0,balance:null,
   prices:{consult:1,audit:6,strategy:8,draft:6,review:8,compact:2}
@@ -109,13 +109,61 @@ async function request(route, options={}) {
   const res=await fetch(API+route,{credentials:"same-origin",cache:"no-store",...options,
     headers:{...(options.body && !(options.body instanceof Blob) ? {"content-type":"application/json"} : {}),...(options.headers||{})}});
   const data=await res.json().catch(()=>({error:"Некорректный ответ сервера"}));
-  if(!res.ok) throw new Error(data.error||"Ошибка сервера");
+  if(!res.ok) throw Object.assign(new Error(data.error||"Ошибка сервера"),{guest:data.guest});
   return data;
 }
 const post=(route,body)=>request(route,{method:"POST",body:JSON.stringify(body)});
-function authView(isAuthed) {
-  $("#authScreen").style.display=isAuthed?"none":"grid";
-  $("#app").style.display=isAuthed?"grid":"none";
+function setAppVisible(visible) {
+  $("#app").style.display=visible?"grid":"none";
+}
+function openAuth(register,{reminder=false}={}) {
+  const dialog=$("#authScreen");
+  if(state.guest&&state.busy&&!reminder)return;
+  if(!dialog.open){
+    state.registered=register;
+    state.awaitingCode=false;
+    state.legacyInviteVisible=false;
+    $("#verifyCode").value="";
+    $("#confirmPassword").value="";
+    $("#authError").textContent="";
+    showPasswordRecovery(false);
+    updateAuthUi();
+  }
+  const guest=state.guest;
+  $("#guestAuthNote").hidden=!guest;
+  $("#guestAuthNote").textContent=guest?.remaining
+    ? "Осталось "+guest.remaining+" из "+guest.limit+" бесплатных вопросов. Зарегистрируйтесь, чтобы продолжить после лимита."
+    : "Вы использовали "+(guest?.limit||20)+" бесплатных вопросов. Для продолжения зарегистрируйтесь или войдите.";
+  $("#closeAuth").hidden=!guest||guest.remaining===0;
+  if(!dialog.open)dialog.showModal();
+}
+function updateGuest(guest) {
+  state.guest=guest;
+  $("#daily").textContent="Бесплатные вопросы: "+guest.used+" / "+guest.limit;
+  $("#guestWelcome").hidden=guest.messages.length>0;
+  $("#messages").hidden=!guest.messages.length;
+  $("#send").disabled=state.busy||guest.remaining===0;
+  $("#messageInput").disabled=guest.remaining===0;
+  $("#modeHint").textContent="Гостевой чат · текстовые вопросы";
+  renderMessages();
+}
+function guestView(guest) {
+  state.user=null;
+  state.current=null;
+  state.docIds.clear();
+  document.body.classList.add("guest-mode");
+  $("#app").hidden=false;
+  setAppVisible(true);
+  $("#guestLogin").hidden=false;
+  $("#guestRegister").hidden=false;
+  $("#who").textContent="";
+  $("#caseTitle").textContent="Гостевой чат";
+  $("#messageInput").placeholder="Задайте юридический вопрос";
+  $("#docPanel").style.display="none";
+  $("#summaryPanel").style.display="none";
+  $("#empty").style.display="none";
+  $("#composer").hidden=false;
+  updateGuest(guest);
 }
 function updateAuthUi() {
   const registration=state.registered;
@@ -198,6 +246,7 @@ function oauthMessage() {
   if(error==="google_link_required") showError("Почта уже зарегистрирована. Войдите с паролем, затем нажмите «Подключить Google».","#authError");
   else if(error==="google_login_failed")showError("Не удалось войти через Google. Проверьте настройки или попробуйте снова.","#authError");
   else if(notice==="google_linked")showError("Аккаунт Google успешно подключён.","#notice");
+  else if(notice==="google_registered"&&state.user)$("#plans").showModal();
   if(error||notice){
     p.delete("auth_error");p.delete("auth_notice");
     const query=p.toString();
@@ -211,15 +260,41 @@ async function boot() {
     state.googleEnabled=!!s.googleEnabled;
     state.prices=s.prices||state.prices;
     state.balance=s.balance??null;
+    $("#freePlanDetails").textContent=s.trialCredits==null
+      ? "20 вопросов в гостевом чате."
+      : "20 гостевых вопросов. После подтверждённой регистрации — "+s.trialCredits+" стартовых AI-токена.";
     updateAuthUi();
-    if(!s.authenticated) {authView(false);oauthMessage();return;}
+    if(!s.authenticated) {
+      const oauthError=new URLSearchParams(location.search).has("auth_error");
+      if(s.guestEnabled){
+        const guest=await request("/guest");
+        guestView(guest);
+        if(!guest.remaining||oauthError)openAuth(!guest.remaining);
+      }else{
+        state.guest=null;
+        document.body.classList.remove("guest-mode");
+        setAppVisible(false);
+        openAuth(false);
+      }
+      oauthMessage();
+      return;
+    }
+    state.guest=null;
+    document.body.classList.remove("guest-mode");
+    $("#guestWelcome").hidden=true;
+    $("#messages").hidden=false;
+    $("#guestLogin").hidden=true;
+    $("#guestRegister").hidden=true;
+    $("#messageInput").disabled=false;
+    $("#messageInput").placeholder="Опишите задачу по делу";
+    $("#authScreen").close();
     state.user=s.user;state.dailyLimit=s.dailyLimit;
-    authView(true);$("#who").textContent=s.user.email;
+    setAppVisible(true);$("#who").textContent=s.user.email;
     $("#googleLink").hidden=!state.googleEnabled||!!s.user.googleLinked;
     oauthMessage();
     if(!s.configured) showError("AI-ключ ещё не подключён. Можно подготовить дела и документы.");
     await loadCases();
-  } catch(e){authView(false);showError(e.message,"#authError");}
+  } catch(e){openAuth(false);showError(e.message,"#authError");}
 }
 async function loadCases(preferredId) {
   const data=await request("/cases");state.cases=data.cases;
@@ -267,7 +342,7 @@ async function loadCase(id,{retainSelection=false}={}) {
 }
 function renderMessages() {
   const wrap=$("#messages");wrap.replaceChildren();
-  const all=state.current?.messages||[];
+  const all=state.guest?.messages||state.current?.messages||[];
   for(const msg of all) {
     const block=document.createElement("article");block.className="msg "+msg.role;
     const meta=document.createElement("div");meta.className="meta";
@@ -294,7 +369,7 @@ function renderMessages() {
       const save=document.createElement("button");save.className="linkbutton";save.textContent="Сохранить TXT";
       save.addEventListener("click",()=>downloadText(plainLegalText(msg.text),"ai-lawyer-analysis.txt"));
       block.append(copy,save);
-      for(const [format,label] of [["docx","Скачать Word"],["pdf","Скачать PDF"]]){
+      for(const [format,label] of (state.guest?[]:[["docx","Скачать Word"],["pdf","Скачать PDF"]])){
         const b=document.createElement("button");b.className="linkbutton";b.textContent=label;
         b.addEventListener("click",()=>downloadExport(state.current.case.id,msg.id,format,b));
         block.append(b);
@@ -377,6 +452,15 @@ function showPasswordRecovery(show){
     $("#resetConfirm").type="password";
   }
 }
+$("#closeAuth").addEventListener("click",()=>$("#authScreen").close());
+$("#authScreen").addEventListener("cancel",ev=>{
+  if(!state.guest?.remaining)ev.preventDefault();
+});
+$("#guestLogin").addEventListener("click",()=>openAuth(false));
+$("#guestRegister").addEventListener("click",()=>openAuth(true));
+$("#openPlans").addEventListener("click",()=>$("#plans").showModal());
+$("#closePlans").addEventListener("click",()=>$("#plans").close());
+$("#continueFree").addEventListener("click",()=>$("#plans").close());
 $("#forgotPassword").addEventListener("click",()=>showPasswordRecovery(true));
 $("#backToLogin").addEventListener("click",()=>showPasswordRecovery(false));
 $("#resetShowPassword").addEventListener("change",ev=>{
@@ -485,17 +569,19 @@ $("#authForm").addEventListener("submit",async ev=>{
       }
       await post("/auth/"+(state.registered?"register":"login"),body);
     }
+    const completedRegistration=state.registered;
     const enteredPassword=$("#password").value;
     if(remember&&enteredPassword)void offerBrowserPasswordSave(email,enteredPassword);
     $("#password").value="";$("#confirmPassword").value="";
     $("#showPassword").checked=false;$("#password").type="password";$("#confirmPassword").type="password";
     $("#invite").value="";$("#verifyCode").value="";
     await boot();
+    if(completedRegistration&&state.user)$("#plans").showModal();
   } catch(e) {showError(e.message,"#authError");}
   finally {submit.disabled=false;}
 });
 $("#logout").addEventListener("click",async()=>{
-  try{await post("/auth/logout",{});state.user=null;state.current=null;authView(false);}
+  try{await post("/auth/logout",{});state.user=null;state.current=null;state.registered=false;await boot();}
   catch(e){showError(e.message);}
 });
 $("#createCase").addEventListener("click",async()=>{
@@ -552,16 +638,31 @@ $("#uploadInput").addEventListener("change",async ev=>{
     showError("Загружено файлов: "+uploaded+". В запрос выбрано максимум 3; остальные сохранены в деле.");
 });
 $("#messageForm").addEventListener("submit",async ev=>{
-  ev.preventDefault();if(state.busy||!state.current) return;
+  ev.preventDefault();if(state.busy||(!state.guest&&!state.current)) return;
   const message=$("#messageInput").value.trim();if(!message) return;
-  const id=state.current.case.id, mode=state.mode, docIds=[...state.docIds];
+  const guest=state.guest;
+  if(guest?.remaining===0){openAuth(true);return;}
+  const id=state.current?.case.id, mode=state.mode, docIds=[...state.docIds];
   state.busy=true;$("#send").disabled=true;$("#send").textContent="Анализ...";
   clearError();
   try{
-    await post("/cases/"+id+"/chat",{message,mode,docIds});
-    $("#messageInput").value="";await loadCases(id);
-  }catch(e){showError(e.message);}
-  finally{state.busy=false;$("#send").disabled=false;$("#send").textContent="Отправить";}
+    if(guest){
+      const next=await post("/guest/chat",{message});
+      $("#messageInput").value="";
+      updateGuest(next);
+      if(!next.remaining||(guest.used<next.reminderAt&&next.used>=next.reminderAt))openAuth(true,{reminder:true});
+    }else{
+      await post("/cases/"+id+"/chat",{message,mode,docIds});
+      $("#messageInput").value="";await loadCases(id);
+    }
+  }catch(e){
+    if(e.guest){updateGuest(e.guest);openAuth(true,{reminder:true});}
+    else showError(e.message);
+  }finally{
+    state.busy=false;
+    $("#send").disabled=state.guest?.remaining===0;
+    $("#send").textContent="Отправить";
+  }
 });
 $("#messageInput").addEventListener("keydown",ev=>{
   if(ev.key==="Enter"&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();$("#messageForm").requestSubmit();}
