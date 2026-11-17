@@ -515,7 +515,7 @@ async function api(req,res,url) {
   if (req.method === "GET" && p === "/chat/api/cases") {
     const u=requireUser(req);
     const cases=store.db.cases.filter(c=>c.ownerId===u.id&&!c.deletedAt).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(c=>store.publicCase(c));
-    return json(res,200,{cases,usedToday:countToday(u.id),...profile(u)});
+    return json(res,200,{cases,usedToday:displayTokens(countToday(u.id)),...profile(u)});
   }
   if (req.method === "POST" && p === "/chat/api/cases") {
     const u=requireUser(req), b=await bodyJson(req);
