@@ -80,7 +80,8 @@ async function downloadExport(caseId,messageId,format,button) {
 const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(),
   busy:false, registered:false, awaitingCode:false, signupMode:"invite",
   legacyInviteVisible:false, googleEnabled:false, dailyLimit:0,balance:null,
-  prices:{consult:1,audit:6,strategy:8,draft:6,review:8,compact:2}
+  pendingRequest:null,
+  prices:{consult:100,audit:600,strategy:800,draft:600,review:800,compact:200}
 };
 const incomingParams=new URLSearchParams(location.search);
 const referralFromLink=(incomingParams.get("ref")||"").trim().toUpperCase().slice(0,20);
@@ -136,19 +137,20 @@ function openAuth(register,{reminder=false}={}) {
   $("#guestAuthNote").hidden=!guest;
   $("#guestAuthNote").textContent=guest?.restriction
     || (guest?.remaining
-      ? "Осталось "+guest.remaining+" из "+guest.limit+" бесплатных вопросов. Зарегистрируйтесь, чтобы продолжить после лимита."
-      : "Вы использовали "+(guest?.limit||10)+" бесплатных вопросов. Для продолжения зарегистрируйтесь или войдите.");
+      ? "У вас "+guest.tokenBalance+" из "+guest.tokenLimit+" бесплатных токенов. Обычный вопрос — 100 токенов. После бесплатного лимита нужна регистрация."
+      : "Бесплатный пакет исчерпан (1 000 токенов). Для продолжения зарегистрируйтесь или войдите.");
   $("#closeAuth").hidden=!guest||guest.remaining===0;
   if(!dialog.open)dialog.showModal();
 }
 function updateGuest(guest) {
   state.guest=guest;
-  $("#daily").textContent=guest.restriction || "Бесплатные вопросы: "+guest.used+" / "+guest.limit;
+  $("#daily").textContent="Бесплатные токены: "+guest.tokenBalance+" / "+guest.tokenLimit+
+    (guest.restriction?" · "+guest.restriction:"");
   $("#guestWelcome").hidden=guest.messages.length>0;
   $("#messages").hidden=!guest.messages.length;
   $("#send").disabled=state.busy||guest.remaining===0;
   $("#messageInput").disabled=guest.remaining===0;
-  $("#modeHint").textContent="Гостевой чат · текстовые вопросы";
+  $("#modeHint").textContent="Гостевой чат · 100 токенов за успешный ответ. При ошибке токены не списываются.";
   renderMessages();
 }
 function guestView(guest) {
@@ -175,8 +177,8 @@ function updateAuthUi() {
   const legacy=registration&&state.signupMode==="invite"&&!requiresCode;
   $("#referralWrap").hidden=!registration||requiresCode;
   $("#referralHelp").textContent=legacy
-    ?"Партнёрский код необязателен. Бонус 50 AI-токенов станет доступен после подключения подтверждения email; тестовая регистрация бонус не начисляет."
-    :"Нет партнёрской ссылки? Оставьте поле пустым. По действующей ссылке — 50 AI-токенов после подтверждения почты (50 обычных консультаций).";
+    ?"Партнёрский код необязателен. После подключения подтверждения email по действующей ссылке будет доступно 5 000 бонусных токенов."
+    :"Нет партнёрской ссылки? Оставьте поле пустым. Действующий код даёт 5 000 бонусных токенов после подтверждения почты (50 обычных консультаций).";
   $("#legacyInviteToggle").hidden=!legacy;
   $("#legacyInviteToggle").textContent=state.legacyInviteVisible
     ?"Скрыть поле тестового кода":"Есть тестовый код доступа";
@@ -223,12 +225,12 @@ function validatePasswordMatch(showErrors=true){
   return !mismatch&&(!relevant||first===repeated);
 }
 function currentPrice(){
-  if(state.mode==="consult"&&state.docIds.size)return Math.max(3,state.docIds.size*3);
-  return state.prices[state.mode]||1;
+  if(state.mode==="consult"&&state.docIds.size)return Math.max(300,state.docIds.size*300);
+  return state.prices[state.mode]||100;
 }
 function updateModeHint(){
   const cost=currentPrice();
-  $("#modeHint").textContent=(MODE_HELP[state.mode]||"")+" · стоимость: "+cost+" AI-токен"+(cost===1?"":cost<5?"а":"ов")+" (внутренние кредиты)";
+  $("#modeHint").textContent=(MODE_HELP[state.mode]||"")+" · стоимость: "+cost+" внутренних токенов. При ошибке токены не списываются.";
 }
 async function offerBrowserPasswordSave(email,password) {
   // Only the browser's password manager may save credentials after explicit opt-in.
@@ -265,8 +267,8 @@ async function boot() {
     state.prices=s.prices||state.prices;
     state.balance=s.balance??null;
     $("#freePlanDetails").textContent=s.trialCredits==null
-      ? "10 вопросов в гостевом чате."
-      : "10 гостевых вопросов. После подтверждённой регистрации — "+s.trialCredits+" стартовых AI-токена.";
+      ? "1 000 токенов (до 10 обычных гостевых вопросов)."
+      : "1 000 токенов (10 обычных гостевых вопросов). После подтверждённой регистрации — "+s.trialCredits+" стартовых токенов.";
     updateAuthUi();
     if(!s.authenticated) {
       const oauthError=new URLSearchParams(location.search).has("auth_error");
@@ -304,7 +306,7 @@ async function loadCases(preferredId) {
   const data=await request("/cases");state.cases=data.cases;
   state.balance=data.balance??null;
   state.prices=data.prices||state.prices;
-  $("#daily").textContent="AI-токены сегодня: "+data.usedToday+" / "+state.dailyLimit+
+  $("#daily").textContent="Токены сегодня: "+data.usedToday+" / "+state.dailyLimit+
     (state.balance===null?"":" · Баланс: "+state.balance);
   updateModeHint();
   renderCaseList();
@@ -656,6 +658,13 @@ $("#messageForm").addEventListener("submit",async ev=>{
   const guest=state.guest;
   if(guest?.remaining===0){openAuth(true);return;}
   const id=state.current?.case.id, mode=state.mode, docIds=[...state.docIds];
+  // Reuse the same ID for a retry of the same prompt, so a late server
+  // response cannot charge twice if the browser connection timed out.
+  const key=JSON.stringify({id:id||null,message,mode:guest?"consult":mode,docIds:guest?[]:docIds});
+  if(!state.pendingRequest || state.pendingRequest.key!==key){
+    state.pendingRequest={key,id:crypto.randomUUID(),caseId:id||null};
+  }
+  const requestId=state.pendingRequest.id;
   state.busy=true;$("#send").disabled=true;$("#send").textContent="Анализ...";
   clearError();
   const started=Date.now();
@@ -667,17 +676,46 @@ $("#messageForm").addEventListener("submit",async ev=>{
   },1000);
   try{
     if(guest){
-      const next=await post("/guest/chat",{message});
+      const next=await post("/guest/chat",{message,requestId});
+      state.pendingRequest=null;
       $("#messageInput").value="";
       updateGuest(next);
       if(!next.remaining||(guest.used<next.reminderAt&&next.used>=next.reminderAt))openAuth(true,{reminder:true});
     }else{
-      await post("/cases/"+id+"/chat",{message,mode,docIds});
-      $("#messageInput").value="";await loadCases(id);
+      const answer=await post("/cases/"+id+"/chat",{message,mode,docIds,requestId});
+      state.pendingRequest=null;
+      $("#messageInput").value="";
+      await loadCases(id);
+      if(answer.alreadyProcessed)$("#notice").textContent="Ответ ранее сохранён. Повторное списание не производилось.";
     }
   }catch(e){
-    if(e.guest){updateGuest(e.guest);openAuth(true,{reminder:true});}
-    else showError(e.message);
+    // A reverse-proxy timeout can occur after the model has finished.
+    // Reconcile the saved reply before telling the user the request failed.
+    if(guest){
+      try{
+        const latest=await request("/guest");
+        updateGuest(latest);
+        if(latest.messages.some(x=>x.role==="assistant"&&x.requestId===requestId)){
+          state.pendingRequest=null;$("#messageInput").value="";
+          $("#notice").textContent="Ответ получен и сохранён; повторного списания нет.";
+        }else{
+          showError(e.message+" Токены за ответ не списаны. Повторите попытку.");
+          if(!latest.remaining)openAuth(true,{reminder:true});
+        }
+      }catch{showError(e.message+" Проверьте историю перед повторной отправкой.");}
+    }else{
+      try{
+        const latest=await request("/cases/"+id);
+        if(latest.messages.some(x=>x.role==="assistant"&&x.requestId===requestId)){
+          state.pendingRequest=null;$("#messageInput").value="";
+          await loadCases(id);
+          $("#notice").textContent="Ответ сохранён в деле. Повторное списание не производилось.";
+        }else{
+          await loadCases(id);
+          showError(e.message+" Если ответ появится позже, он сохранится в истории. При повторе того же запроса двойного списания не будет.");
+        }
+      }catch{showError(e.message+" Не удалось проверить результат; не меняйте текст запроса перед повтором.");}
+    }
   }finally{
     clearInterval(progress);
     state.busy=false;
