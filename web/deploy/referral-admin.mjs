@@ -49,7 +49,7 @@ try{
       maxRedemptions<1||maxRedemptions>1000)throw Error("Usage: create 'Partner Name' [max 1..1000]");
     const result=await adminRequest("/chat/api/admin/referrals","POST",{partner,maxRedemptions});
     console.log("Partner: "+result.campaign.partner);
-    console.log("Promotional credit: 50 AI-tokens per verified registered user.");
+    console.log("Promotional credit: 5000 public AI Lawyer tokens (50 legacy credits) per verified registered user.");
     console.log("Max verified registrations: "+result.campaign.maxRedemptions);
     console.log("Referral link: "+result.link);
   }else if(action==="list"){
