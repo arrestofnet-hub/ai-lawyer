@@ -180,13 +180,21 @@ function ensureGuestIdle(req) {
   if (guestRequests.has(guestFor(req)?.hash))
     fail(409,"Дождитесь ответа на гостевой вопрос и повторите регистрацию");
 }
-function saveGuestConversation(req,user) {
-  const guest = guestFor(req);
-  if (!guest?.messages.length) return;
+function saveGuestConversation(req,user,priorGuestHash=null) {
+  // Registration may finish in a different tab after the browser lost its
+  // guest cookie; preserve the authenticated email-start linkage server-side.
+  const linked = priorGuestHash
+    ? (store.db.guests || []).find(g=>g.hash===priorGuestHash && g.expiresAt>Date.now())
+    : null;
+  const guest = linked || guestFor(req);
+  if (!guest?.messages?.length) return null;
+  if (guestRequests.has(guest.hash))
+    fail(409,"Дождитесь окончания гостевого ответа и повторите действие");
   const id = randomId(), time = now();
   store.db.cases.push({...GUEST_CASE,id,ownerId:user.id,createdAt:time,updatedAt:time});
   store.db.messages.push(...guest.messages.map(m=>({...m,caseId:id})));
-  guest.messages = [];
+  guest.messages = []; // Idempotent: subsequent login cannot attach twice.
+  return id;
 }
 async function guestChat(req,res) {
   const body = await bodyJson(req);
@@ -233,10 +241,18 @@ async function askModel(payload) {
       body:JSON.stringify(payload), signal:AbortSignal.timeout(120000),
     });
     data = await response.json();
-  } catch (e) { fail(502,"Не удалось получить ответ модели: " + (e.name === "TimeoutError" ? "тайм-аут" : "ошибка соединения")); }
+  } catch (e) {
+    const timedOut=e.name==="TimeoutError" || e.name==="AbortError";
+    console.error("ai_model_transport",timedOut?"timeout":"connection_error",e.code||"");
+    fail(timedOut?504:502,timedOut
+      ? "Ответ модели превысил две минуты. Повторите запрос короче либо без вложений."
+      : "Не удалось связаться с AI. Проверьте подключение и повторите запрос.");
+  }
   if (!response.ok) {
-    // Never return provider errors containing sensitive request details or API keys.
-    fail(502,"Поставщик AI вернул ошибку (" + response.status + "). Проверьте модель, ключ и баланс API.");
+    // No client text, credentials, or upstream error message is written to logs.
+    console.error("ai_model_provider",response.status,String(data?.error?.code||"").slice(0,50));
+    if(response.status===429)fail(503,"AI временно ограничил число запросов. Повторите позже.");
+    fail(502,"Поставщик AI вернул ошибку (" + response.status + "). Повторите запрос позже.");
   }
   const parsed = extractOutput(data);
   if (!parsed.text) fail(502,"Модель не вернула текстового ответа");
@@ -335,8 +351,9 @@ async function api(req,res,url) {
     if (store.db.users.some(u=>u.email===email)) fail(409,"Адрес уже зарегистрирован");
     ensureGuestIdle(req);
     const u={id:randomId(), email, pass:hashPassword(b.password), createdAt:now()};
-    store.db.users.push(u); saveGuestConversation(req,u); store.save(); newSession(u,res,b.remember===true);
-    return json(res,201,{user:safeUser(u)});
+    store.db.users.push(u); const guestCaseId=saveGuestConversation(req,u);
+    store.save(); newSession(u,res,b.remember===true);
+    return json(res,201,{user:safeUser(u),guestCaseId});
   }
   if (req.method === "POST" && p === "/chat/api/auth/email-start") {
     if(!mailEnabled())fail(503,"Для свободной регистрации нужно подключить отправку писем SMTP");
@@ -349,8 +366,10 @@ async function api(req,res,url) {
     if(referralCode&&!campaignByCode(store.db,referralCode))
       fail(400,"Партнёрский код недействителен или лимит регистраций исчерпан");
     const code=newEmailCode();
+    ensureGuestIdle(req);
     const pending={email,pass:hashPassword(b.password),codeHash:emailCodeHash(email,code,KEY),
       referralCode,referralSource:safeSource(b.referralSource),
+      guestHash:guestFor(req)?.hash || null,
       expiresAt:Date.now()+15*60000,attempts:0,remember:b.remember===true};
     store.db.pendingSignups=(store.db.pendingSignups||[]).filter(x=>x.expiresAt>Date.now()&&x.email!==email);
     if(store.db.pendingSignups.length>=1000)fail(429,"Регистрация временно ограничена");
@@ -369,6 +388,8 @@ async function api(req,res,url) {
     const pending=(store.db.pendingSignups||[]).find(x=>x.email===email&&x.expiresAt>Date.now());
     if(!pending)fail(400,"Код отсутствует или истёк. Запросите новый");
     ensureGuestIdle(req);
+    if(pending.guestHash && guestRequests.has(pending.guestHash))
+      fail(409,"Дождитесь окончания гостевого ответа и повторите регистрацию");
     pending.attempts++;
     const success=pending.attempts<=5&&emailCodeMatches(email,b.code,pending.codeHash,KEY);
     if(pending.attempts>=5||success)store.db.pendingSignups=store.db.pendingSignups.filter(x=>x!==pending);
@@ -381,8 +402,10 @@ async function api(req,res,url) {
     const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now(),
       credits:grant.credits,accountType:"trial",referralCode:grant.referralCode,
       referralSource:pending.referralSource||null};
-    store.db.users.push(u);saveGuestConversation(req,u);store.save();newSession(u,res,pending.remember);
-    return json(res,201,{user:safeUser(u)});
+    store.db.users.push(u);
+    const guestCaseId=saveGuestConversation(req,u,pending.guestHash);
+    store.save();newSession(u,res,pending.remember);
+    return json(res,201,{user:safeUser(u),guestCaseId});
   }
   // Password reset always verifies control of the registered email address.
   // Never reveal whether an email belongs to an account.
@@ -435,8 +458,10 @@ async function api(req,res,url) {
     const b=await bodyJson(req), email=validateEmail(b.email);
     const user=store.db.users.find(u=>u.email===email);
     if (!user || !checkPassword(String(b.password||""),user.pass)) fail(401,"Неверная почта или пароль");
+    ensureGuestIdle(req);
+    const guestCaseId=saveGuestConversation(req,user);
     newSession(user,res,b.remember===true);
-    return json(res,200,{user:safeUser(user)});
+    return json(res,200,{user:safeUser(user),guestCaseId});
   }
   if (req.method === "POST" && p === "/chat/api/auth/logout") {
     const token=cookies(req).al_session;
@@ -561,6 +586,20 @@ async function api(req,res,url) {
   }
   fail(404,"Неподдерживаемое действие");
 }
+async function sendExportResponse(req,res,message,format) {
+  if(format!=="pdf" && format!=="docx") fail(400,"Поддерживаются Word (.docx) и PDF");
+  rateLimit(req,"export",25,60*60*1000);
+  const bytes=format==="pdf" ? await exportPdf(message.text) : await exportDocx(message.text);
+  const type=format==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  res.writeHead(200,{
+    "content-type":type,
+    "content-length":bytes.length,
+    "content-disposition":'attachment; filename="ai-lawyer-'+message.id.slice(0,8)+"."+format+'"',
+    "cache-control":"no-store",
+    "x-content-type-options":"nosniff"
+  });
+  return res.end(bytes);
+}
 const server=http.createServer(async(req,res)=>{
   res.setHeader("x-content-type-options","nosniff");
   res.setHeader("x-frame-options","DENY");
@@ -658,24 +697,20 @@ const server=http.createServer(async(req,res)=>{
     }
     if(req.method!=="GET" && !["POST","PATCH","DELETE"].includes(req.method)) fail(405,"Метод не поддерживается");
     if(req.method!=="GET") sameOrigin(req);
-    const exportMatch=url.pathname.match(new RegExp("^/chat/api/cases/([a-f0-9-]{36})/export/([a-f0-9-]{36})$"));
+    const guestExportMatch=url.pathname.match(/^\/chat\/api\/guest\/export\/([a-f0-9-]{36})$/);
+    if(req.method==="GET" && guestExportMatch) {
+      const guest=guestFor(req);
+      if(!guest) fail(401,"Гостевая сессия не найдена. Войдите в аккаунт");
+      const message=guest.messages.find(m=>m.id===guestExportMatch[1] && m.role==="assistant");
+      if(!message) fail(404,"Ответ не найден в этой гостевой переписке");
+      return sendExportResponse(req,res,message,url.searchParams.get("format"));
+    }
+    const exportMatch=url.pathname.match(/^\/chat\/api\/cases\/([a-f0-9-]{36})\/export\/([a-f0-9-]{36})$/);
     if(req.method==="GET" && exportMatch) {
       const {c}=ownedCase(req,exportMatch[1]);
       const message=store.db.messages.find(m=>m.caseId===c.id && m.id===exportMatch[2] && m.role==="assistant");
       if(!message) fail(404,"Ответ не найден в этом деле");
-      const format=url.searchParams.get("format");
-      if(format!=="pdf" && format!=="docx") fail(400,"Поддерживаются Word (.docx) и PDF");
-      rateLimit(req,"export",25,60*60*1000);
-      const bytes=format==="pdf" ? await exportPdf(message.text) : await exportDocx(message.text);
-      const type=format==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      res.writeHead(200,{
-        "content-type":type,
-        "content-length":bytes.length,
-        "content-disposition":'attachment; filename="ai-lawyer-'+message.id.slice(0,8)+"."+format+'"',
-        "cache-control":"no-store",
-        "x-content-type-options":"nosniff"
-      });
-      return res.end(bytes);
+      return sendExportResponse(req,res,message,url.searchParams.get("format"));
     }
     if(!url.pathname.startsWith("/chat/api/")) fail(404,"Ресурс не найден");
     await api(req,res,url);

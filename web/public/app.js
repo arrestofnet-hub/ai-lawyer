@@ -58,7 +58,10 @@ function formattedAnswer(text) {
 async function downloadExport(caseId,messageId,format,button) {
   const original=button.textContent;button.disabled=true;button.textContent="Создаём...";
   try {
-    const response=await fetch(API+"/cases/"+encodeURIComponent(caseId)+"/export/"+encodeURIComponent(messageId)+"?format="+encodeURIComponent(format),{
+    const endpoint=caseId
+      ? API+"/cases/"+encodeURIComponent(caseId)+"/export/"+encodeURIComponent(messageId)
+      : API+"/guest/export/"+encodeURIComponent(messageId);
+    const response=await fetch(endpoint+"?format="+encodeURIComponent(format),{
       credentials:"same-origin",cache:"no-store"
     });
     if(!response.ok){
@@ -370,9 +373,9 @@ function renderMessages() {
       const save=document.createElement("button");save.className="linkbutton";save.textContent="Сохранить TXT";
       save.addEventListener("click",()=>downloadText(plainLegalText(msg.text),"ai-lawyer-analysis.txt"));
       block.append(copy,save);
-      for(const [format,label] of (state.guest?[]:[["docx","Скачать Word"],["pdf","Скачать PDF"]])){
+      for(const [format,label] of [["docx","Скачать Word"],["pdf","Скачать PDF"]]){
         const b=document.createElement("button");b.className="linkbutton";b.textContent=label;
-        b.addEventListener("click",()=>downloadExport(state.current.case.id,msg.id,format,b));
+        b.addEventListener("click",()=>downloadExport(state.guest?null:state.current.case.id,msg.id,format,b));
         block.append(b);
       }
     }
@@ -540,13 +543,14 @@ $("#authForm").addEventListener("submit",async ev=>{
   ev.preventDefault();$("#authError").textContent="";
   const submit=$("#authSubmit");submit.disabled=true;
   try {
+    let authResult=null;
     const email=$("#email").value.trim(), remember=$("#remember").checked;
     if(state.registered&&!state.awaitingCode&&!validatePasswordMatch(true)){
       showError("Проверьте повтор пароля: оба значения должны совпадать.","#authError");
       return;
     }
     if(state.awaitingCode) {
-      await post("/auth/email-verify",{email,code:$("#verifyCode").value.trim()});
+      authResult=await post("/auth/email-verify",{email,code:$("#verifyCode").value.trim()});
       state.awaitingCode=false;
     } else if(state.registered&&state.signupMode==="email") {
       await post("/auth/email-start",{
@@ -568,7 +572,7 @@ $("#authForm").addEventListener("submit",async ev=>{
         if(!state.legacyInviteVisible)throw Error("Почтовое подтверждение пока настраивается. Для тестового доступа укажите существующий код приглашения.");
         body.invite=$("#invite").value;
       }
-      await post("/auth/"+(state.registered?"register":"login"),body);
+      authResult=await post("/auth/"+(state.registered?"register":"login"),body);
     }
     const completedRegistration=state.registered;
     const enteredPassword=$("#password").value;
@@ -577,6 +581,14 @@ $("#authForm").addEventListener("submit",async ev=>{
     $("#showPassword").checked=false;$("#password").type="password";$("#confirmPassword").type="password";
     $("#invite").value="";$("#verifyCode").value="";
     await boot();
+    const transferred=!!authResult?.guestCaseId;
+    $("#guestHistorySaved").hidden=!transferred;
+    if(transferred&&state.user){
+      await loadCases(authResult.guestCaseId);
+      const notice=$("#notice");
+      notice.textContent="Гостевая переписка сохранена в вашем личном деле.";
+      notice.style.color="#16683e";
+    }
     if(completedRegistration&&state.user)$("#plans").showModal();
   } catch(e) {showError(e.message,"#authError");}
   finally {submit.disabled=false;}
@@ -646,6 +658,13 @@ $("#messageForm").addEventListener("submit",async ev=>{
   const id=state.current?.case.id, mode=state.mode, docIds=[...state.docIds];
   state.busy=true;$("#send").disabled=true;$("#send").textContent="Анализ...";
   clearError();
+  const started=Date.now();
+  const progress=setInterval(()=>{
+    if(!state.busy)return;
+    const seconds=Math.floor((Date.now()-started)/1000);
+    $("#send").textContent="Анализ... "+seconds+" с";
+    if(seconds===20)$("#notice").textContent="Запрос ещё выполняется. Подробный ответ может занять до двух минут.";
+  },1000);
   try{
     if(guest){
       const next=await post("/guest/chat",{message});
@@ -660,6 +679,7 @@ $("#messageForm").addEventListener("submit",async ev=>{
     if(e.guest){updateGuest(e.guest);openAuth(true,{reminder:true});}
     else showError(e.message);
   }finally{
+    clearInterval(progress);
     state.busy=false;
     $("#send").disabled=state.guest?.remaining===0;
     $("#send").textContent="Отправить";
