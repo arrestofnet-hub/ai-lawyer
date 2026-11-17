@@ -3,6 +3,14 @@
 // consume more. Campaigns cannot be issued or changed by public users.
 import crypto from "node:crypto";
 
+// Public display unit: 100 AI Lawyer tokens = 1 legacy prepaid service credit.
+// Existing encrypted balances are NOT multiplied in storage or re-granted.
+export const PUBLIC_TOKEN_MULTIPLIER=100;
+export function displayTokens(legacyCredits) {
+  return legacyCredits===null || legacyCredits===undefined ? null
+    : legacyCredits*PUBLIC_TOKEN_MULTIPLIER;
+}
+
 export const REFERRAL_BONUS=50;
 export const TRIAL_CREDITS=3;
 export const MODE_COSTS=Object.freeze({
