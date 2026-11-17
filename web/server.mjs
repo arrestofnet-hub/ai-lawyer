@@ -206,8 +206,17 @@ async function guestChat(req,res) {
   const body = await bodyJson(req);
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message || message.length > MAX_MESSAGE_CHARS) fail(400,"Сообщение пустое или слишком длинное");
+  const requestId=body.requestId===undefined ? null : String(body.requestId);
+  if(requestId!==null && !/^[a-f0-9-]{36}$/i.test(requestId))
+    fail(400,"Некорректный идентификатор запроса");
   const guest = guestFor(req);
   if (!guest) fail(409,"Обновите страницу, чтобы открыть гостевой чат");
+  const already=requestId && guest.messages.find(m=>m.role==="assistant" && m.requestId===requestId);
+  if(already){
+    const original=guest.messages.find(m=>m.role==="user" && m.requestId===requestId);
+    if(!original || original.text!==message)fail(409,"Идентификатор запроса уже использован");
+    return json(res,200,{...guestStatus(guest,req),alreadyProcessed:true});
+  }
   const initialStatus = guestStatus(guest,req);
   if (!initialStatus.remaining) return json(res,403,{
     error:initialStatus.restriction || "Для продолжения зарегистрируйтесь или войдите",guest:initialStatus
@@ -222,8 +231,8 @@ async function guestChat(req,res) {
     const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],"consult",true));
     const previousMessages = guest.messages;
     guest.messages = [...previousMessages,
-      {id:randomId(),role:"user",text:message,mode:"consult",createdAt:now()},
-      {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode:"consult",createdAt:now()}];
+      {id:randomId(),role:"user",text:message,mode:"consult",requestId,createdAt:now()},
+      {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode:"consult",requestId,createdAt:now()}];
     guest.used++;
     try { store.save(); }
     catch (error) { guest.used--; guest.messages=previousMessages; throw error; }
