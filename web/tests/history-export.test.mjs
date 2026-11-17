@@ -30,7 +30,7 @@ test("guest exports, email confirmation after lost cookie, and existing-account 
       once(child.stdout,"data").then(([b])=>b.toString()),
       once(child,"exit").then(([code])=>{throw Error("Server exited: "+code);})
     ]);
-    const port=output.match(/AI Lawyer web listening on (\\d+)/)?.[1];
+    const port=output.match(/AI Lawyer web listening on ([0-9]+)/)?.[1];
     assert.ok(port);
     base="http://127.0.0.1:"+port;
   }
@@ -64,7 +64,7 @@ test("guest exports, email confirmation after lost cookie, and existing-account 
     const assistant=guestData.messages.find(m=>m.role==="assistant");
     assert.ok(assistant?.id);
     await checkFile("/guest/export/"+assistant.id+"?format=docx",cookie,"PK",/wordprocessingml/);
-    await checkFile("/guest/export/"+assistant.id+"?format=pdf",cookie,"%PDF",/application\\/pdf/);
+    await checkFile("/guest/export/"+assistant.id+"?format=pdf",cookie,"%PDF",/application[/]pdf/);
     assert.equal((await call("/guest/export/"+assistant.id+"?format=pdf")).status,401);
     await stop();
 
@@ -93,7 +93,7 @@ test("guest exports, email confirmation after lost cookie, and existing-account 
     assert.equal(saved.messages.length,4);
     const migratedAssistant=saved.messages.find(m=>m.role==="assistant");
     await checkFile("/cases/"+registered.guestCaseId+"/export/"+migratedAssistant.id+"?format=docx",sessionCookie,"PK",/wordprocessingml/);
-    await checkFile("/cases/"+registered.guestCaseId+"/export/"+migratedAssistant.id+"?format=pdf",sessionCookie,"%PDF",/application\\/pdf/);
+    await checkFile("/cases/"+registered.guestCaseId+"/export/"+migratedAssistant.id+"?format=pdf",sessionCookie,"%PDF",/application[/]pdf/);
 
     // Logging into an existing account must not discard the new guest's chat.
     const nextGuest=await call("/guest");
