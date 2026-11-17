@@ -131,15 +131,16 @@ function openAuth(register,{reminder=false}={}) {
   }
   const guest=state.guest;
   $("#guestAuthNote").hidden=!guest;
-  $("#guestAuthNote").textContent=guest?.remaining
-    ? "Осталось "+guest.remaining+" из "+guest.limit+" бесплатных вопросов. Зарегистрируйтесь, чтобы продолжить после лимита."
-    : "Вы использовали "+(guest?.limit||20)+" бесплатных вопросов. Для продолжения зарегистрируйтесь или войдите.";
+  $("#guestAuthNote").textContent=guest?.restriction
+    || (guest?.remaining
+      ? "Осталось "+guest.remaining+" из "+guest.limit+" бесплатных вопросов. Зарегистрируйтесь, чтобы продолжить после лимита."
+      : "Вы использовали "+(guest?.limit||10)+" бесплатных вопросов. Для продолжения зарегистрируйтесь или войдите.");
   $("#closeAuth").hidden=!guest||guest.remaining===0;
   if(!dialog.open)dialog.showModal();
 }
 function updateGuest(guest) {
   state.guest=guest;
-  $("#daily").textContent="Бесплатные вопросы: "+guest.used+" / "+guest.limit;
+  $("#daily").textContent=guest.restriction || "Бесплатные вопросы: "+guest.used+" / "+guest.limit;
   $("#guestWelcome").hidden=guest.messages.length>0;
   $("#messages").hidden=!guest.messages.length;
   $("#send").disabled=state.busy||guest.remaining===0;
@@ -261,8 +262,8 @@ async function boot() {
     state.prices=s.prices||state.prices;
     state.balance=s.balance??null;
     $("#freePlanDetails").textContent=s.trialCredits==null
-      ? "20 вопросов в гостевом чате."
-      : "20 гостевых вопросов. После подтверждённой регистрации — "+s.trialCredits+" стартовых AI-токена.";
+      ? "10 вопросов в гостевом чате."
+      : "10 гостевых вопросов. После подтверждённой регистрации — "+s.trialCredits+" стартовых AI-токена.";
     updateAuthUi();
     if(!s.authenticated) {
       const oauthError=new URLSearchParams(location.search).has("auth_error");

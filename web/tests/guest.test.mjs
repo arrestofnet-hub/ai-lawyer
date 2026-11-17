@@ -53,7 +53,7 @@ test("guest quota, persistence and registration handoff", async () => {
     assert.equal(first.status,200);
     assert.match(first.headers.get("set-cookie"),/HttpOnly; SameSite=Lax/);
     const cookie = first.headers.get("set-cookie").split(";")[0];
-    assert.equal((await first.json()).remaining,20);
+    assert.equal((await first.json()).remaining,10);
     assert.equal((await call("/guest/chat",undefined,{message:"Вопрос"})).status,409);
     assert.equal((await call("/guest/chat",cookie,{message:"Вопрос"},{origin:"https://other.example"})).status,403);
     assert.equal((await call("/guest/chat",cookie,{message:"Ошибочный запрос"})).status,502);
@@ -61,23 +61,34 @@ test("guest quota, persistence and registration handoff", async () => {
 
     const parallel = await Promise.all([1,2].map(()=>call("/guest/chat",cookie,{message:"Параллельный запрос"})));
     assert.deepEqual(parallel.map(r=>r.status).sort(),[200,429]);
-    for(let n=2;n<=20;n++){
+    for(let n=2;n<=10;n++){
       const answer = await call("/guest/chat",cookie,{message:"Вопрос "+n});
       assert.equal(answer.status,200);
       const data = await answer.json();
       assert.equal(data.used,n);
       assert.equal(data.messages.length,n*2);
-      if(n===5){assert.equal(data.remaining,15);assert.equal(data.reminderAt,5);}
+      if(n===5){assert.equal(data.remaining,5);assert.equal(data.reminderAt,5);}
     }
 
     await stop();
     await start();
-    assert.equal((await (await call("/guest",cookie)).json()).used,20);
-    const blocked = await call("/guest/chat",cookie,{message:"Вопрос 21"});
+    assert.equal((await (await call("/guest",cookie)).json()).used,10);
+    const blocked = await call("/guest/chat",cookie,{message:"Вопрос 11"});
     assert.equal(blocked.status,403);
     assert.equal((await blocked.json()).guest.remaining,0);
-    assert.equal((await (await call("/guest")).json()).used,0);
-    assert.equal((await (await call("/guest","al_guest="+"a".repeat(64))).json()).used,0);
+    // Cookie deletion does NOT issue another full trial: the encrypted IP ledger
+    // remembers all 11 provider attempts (one failure plus ten successful replies).
+    const newBrowser = await call("/guest");
+    assert.equal(newBrowser.status,200);
+    const newCookie = newBrowser.headers.get("set-cookie").split(";")[0];
+    const freshStatus = await newBrowser.json();
+    assert.equal(freshStatus.used,0);
+    assert.equal(freshStatus.remaining,1);
+    assert.equal((await call("/guest/chat",newCookie,{message:"Последний бесплатный запрос"})).status,200);
+    const exhausted = await call("/guest");
+    assert.equal((await exhausted.json()).remaining,0);
+    assert.equal(exhausted.headers.get("set-cookie"),null);
+    assert.equal((await (await call("/guest","al_guest="+"a".repeat(64))).json()).remaining,0);
 
     const signup = await call("/auth/register",cookie,{
       email:"guest@example.com",password:"long-test-password",invite:"test-invite"
@@ -87,7 +98,7 @@ test("guest quota, persistence and registration handoff", async () => {
     const cases = await (await call("/cases",account)).json();
     assert.equal(cases.cases.length,1);
     const saved = await (await call("/cases/"+cases.cases[0].id,account)).json();
-    assert.equal(saved.messages.length,40);
+    assert.equal(saved.messages.length,20);
     assert.equal((await call("/cases/"+cases.cases[0].id,cookie)).status,401);
     const usedGuest = await (await call("/guest",cookie)).json();
     assert.equal(usedGuest.remaining,0);

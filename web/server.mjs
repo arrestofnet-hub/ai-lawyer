@@ -31,10 +31,15 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
 const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
 const DAILY_LIMIT = Math.max(1, Number(process.env.MAX_MESSAGES_PER_DAY || 25));
 const MAX_USER_DOCS_PER_CHAT = 3;
-const GUEST_LIMIT = 20;
+const GUEST_LIMIT = 10;
 const GUEST_REMINDER = 5;
 const GUEST_MAX_AGE = 90 * 86400;
 const GUEST_ENABLED = process.env.GUEST_CHAT_ENABLED !== "0";
+// Conservative pilot caps: model calls are reserved BEFORE calling OpenAI.
+// All guest attempts, including upstream failures, count toward these cost guards.
+const GUEST_IP_30D_MAX = Math.max(1, Math.min(100, Number(process.env.GUEST_IP_30D_MAX || 12)));
+const GUEST_GLOBAL_24H_MAX = Math.max(1, Math.min(10000, Number(process.env.GUEST_GLOBAL_24H_MAX || 40)));
+const DAY_MS = 86400000;
 const GUEST_CASE = { title:"Гостевая консультация", objective:"", summary:"" };
 const guestRequests = new Set();
 const throttle = new Map();
@@ -99,16 +104,47 @@ function newSession(user,res,remember=false) {
   res.setHeader("set-cookie",sessionCookie(token,remember?30*86400:undefined));
 }
 function safeUser(u) { return { id:u.id,email:u.email,googleLinked:!!u.googleSub }; }
-function rateLimit(req, bucket, limit, ms) {
+function clientIp(req) {
   const remote = req.socket.remoteAddress || "?";
   const forwarded = String(req.headers["x-real-ip"] || "");
-  // Trust X-Real-IP only from a local Nginx proxy configured to overwrite this header.
-  const ip = (["127.0.0.1","::1","::ffff:127.0.0.1"].includes(remote) && net.isIP(forwarded)) ? forwarded : remote;
-  const k = bucket + "|" + ip, entry = throttle.get(k) || { count:0, reset:0 };
+  // Only local Nginx is trusted to overwrite X-Real-IP.
+  return (["127.0.0.1","::1","::ffff:127.0.0.1"].includes(remote) && net.isIP(forwarded))
+    ? forwarded : remote;
+}
+function rateLimit(req, bucket, limit, ms) {
+  const k = bucket + "|" + clientIp(req), entry = throttle.get(k) || { count:0, reset:0 };
   if (entry.reset < Date.now()) { entry.count = 0; entry.reset = Date.now() + ms; }
   entry.count++; throttle.set(k,entry);
   if (entry.count > limit) fail(429,"Слишком много запросов");
   if (throttle.size > 5000) for (const [key,value] of throttle) if (value.reset < Date.now()) throttle.delete(key);
+}
+function guestQuota(req, at=Date.now()) {
+  // HMAC pseudonym: raw IP addresses are NOT stored in the encrypted quota ledger.
+  const identity = crypto.createHmac("sha256",KEY).update("guest-ip-v1:" + clientIp(req).toLowerCase()).digest("hex");
+  let fromIp = 0, global24h = 0;
+  for (const x of (store.db.guestAttempts || [])) {
+    if (x.at > at - 30*DAY_MS && x.identity === identity) fromIp++;
+    if (x.at > at - DAY_MS) global24h++;
+  }
+  const ipRemaining = Math.max(0,GUEST_IP_30D_MAX-fromIp);
+  const globalRemaining = Math.max(0,GUEST_GLOBAL_24H_MAX-global24h);
+  const remaining = Math.min(ipRemaining,globalRemaining);
+  const restriction = ipRemaining === 0
+    ? "Лимит бесплатных обращений с этого подключения исчерпан. Зарегистрируйтесь или войдите."
+    : globalRemaining === 0
+    ? "Суточный лимит бесплатных обращений сервиса исчерпан. Зарегистрируйтесь или войдите."
+    : null;
+  return { identity, remaining, restriction };
+}
+function reserveGuestAttempt(req) {
+  const at = Date.now(), quota = guestQuota(req,at);
+  if (!quota.remaining) fail(429,quota.restriction || "Бесплатный лимит исчерпан");
+  const previous = store.db.guestAttempts;
+  store.db.guestAttempts = (previous || [])
+    .filter(x => Number.isFinite(x.at) && x.at > at-30*DAY_MS)
+    .concat({identity:quota.identity,at});
+  try { store.save(); }
+  catch (error) { store.db.guestAttempts=previous; throw error; }
 }
 function guestFor(req) {
   const token = cookies(req).al_guest;
@@ -116,22 +152,27 @@ function guestFor(req) {
   const hash = tokenHash(token);
   return (store.db.guests || []).find(g => g.hash === hash && g.expiresAt > Date.now()) || null;
 }
-function guestStatus(guest) {
-  const used = guest?.used || 0;
-  return { used, remaining:GUEST_LIMIT-used, limit:GUEST_LIMIT,
-    reminderAt:GUEST_REMINDER, messages:guest?.messages.map(m=>store.publicMessage(m)) || [] };
+function guestStatus(guest,req) {
+  const used = Math.min(GUEST_LIMIT,guest?.used || 0), quota = guestQuota(req);
+  const cookieRemaining = Math.max(0,GUEST_LIMIT-used);
+  const remaining = Math.min(cookieRemaining,quota.remaining);
+  return { used, remaining, limit:GUEST_LIMIT,
+    reminderAt:GUEST_REMINDER,
+    ...(cookieRemaining>0 && quota.restriction ? {restriction:quota.restriction}:{}),
+    messages:guest?.messages.map(m=>store.publicMessage(m)) || [] };
 }
 function openGuest(req,res) {
   const guest = guestFor(req);
-  if (guest) return json(res,200,guestStatus(guest));
-  rateLimit(req,"guest-start",20,60*60000);
+  if (guest) return json(res,200,guestStatus(guest,req));
+  if (!guestQuota(req).remaining) return json(res,200,guestStatus(null,req));
+  rateLimit(req,"guest-start",6,60*60000);
   const token = crypto.randomBytes(32).toString("hex");
   const created = {hash:tokenHash(token),expiresAt:Date.now()+GUEST_MAX_AGE*1000,used:0,messages:[]};
   store.db.guests = (store.db.guests || []).filter(g=>g.expiresAt>Date.now());
   store.db.guests.push(created);
   store.save();
   const secure = ORIGIN.startsWith("https:") ? "; Secure" : "";
-  return json(res,200,guestStatus(created),{
+  return json(res,200,guestStatus(created,req),{
     "set-cookie":`al_guest=${token}; HttpOnly; SameSite=Lax; Path=/chat/; Max-Age=${GUEST_MAX_AGE}${secure}`
   });
 }
@@ -153,14 +194,17 @@ async function guestChat(req,res) {
   if (!message || message.length > MAX_MESSAGE_CHARS) fail(400,"Сообщение пустое или слишком длинное");
   const guest = guestFor(req);
   if (!guest) fail(409,"Обновите страницу, чтобы открыть гостевой чат");
-  if (guest.used >= GUEST_LIMIT) return json(res,403,{
-    error:"Для продолжения зарегистрируйтесь или войдите",guest:guestStatus(guest)
+  const initialStatus = guestStatus(guest,req);
+  if (!initialStatus.remaining) return json(res,403,{
+    error:initialStatus.restriction || "Для продолжения зарегистрируйтесь или войдите",guest:initialStatus
   });
   if (guestRequests.has(guest.hash) || guestRequests.size >= 6)
     fail(429,"Гостевой чат занят. Дождитесь ответа или повторите немного позже");
-  rateLimit(req,"guest-chat",80,60*60000);
+  rateLimit(req,"guest-chat",30,60*60000);
   guestRequests.add(guest.hash);
   try {
+    if (!process.env.OPENAI_API_KEY) fail(503,"Серверу не задан OPENAI_API_KEY");
+    reserveGuestAttempt(req);
     const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],"consult",true));
     const previousMessages = guest.messages;
     guest.messages = [...previousMessages,
@@ -169,7 +213,7 @@ async function guestChat(req,res) {
     guest.used++;
     try { store.save(); }
     catch (error) { guest.used--; guest.messages=previousMessages; throw error; }
-    return json(res,200,guestStatus(guest));
+    return json(res,200,guestStatus(guest,req));
   } finally {
     guestRequests.delete(guest.hash);
   }
