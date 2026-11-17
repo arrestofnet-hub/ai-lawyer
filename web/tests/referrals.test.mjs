@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import {
   REFERRAL_BONUS,TRIAL_CREDITS,normalizeReferral,safeSource,createCampaign,
   registrationCredit,allocateVerifiedRegistration,campaignByCode,
-  aiTokenCost,balanceOf,canSpend,spendCredits,adminAuthorized
+  aiTokenCost,balanceOf,canSpend,spendCredits,adminAuthorized,displayTokens,PUBLIC_TOKEN_MULTIPLIER
 } from "../referrals.mjs";
 
 test("partner referral codes are validated, bounded and cannot be self-invented",()=>{
@@ -47,6 +47,11 @@ test("AI-tokens are internal credits with distinct prices for legal operations",
   assert.equal(canSpend(u,45),false);
   assert.throws(()=>spendCredits(u,45),/Недостаточно/);
   assert.equal(balanceOf({}),null,"old pilot accounts retain backward compatibility");
+  assert.equal(PUBLIC_TOKEN_MULTIPLIER,100);
+  assert.equal(displayTokens(10),1000);
+  assert.equal(displayTokens(3),300);
+  assert.equal(displayTokens(50),5000);
+  assert.equal(displayTokens(null),null);
 });
 test("admin-only referral creation requires localhost and unpredictable secret",()=>{
   const secret=crypto.randomBytes(32).toString("hex");
