@@ -33,6 +33,7 @@ const DAILY_LIMIT = Math.max(1, Number(process.env.MAX_MESSAGES_PER_DAY || 25));
 const MAX_USER_DOCS_PER_CHAT = 3;
 const GUEST_LIMIT = 10;
 const GUEST_REMINDER = 5;
+const GUEST_DOCUMENT_BONUS = 600; // One draft, separate from ten consultations.
 const GUEST_MAX_AGE = 90 * 86400;
 const GUEST_ENABLED = process.env.GUEST_CHAT_ENABLED !== "0";
 // Conservative pilot caps: model calls are reserved BEFORE calling OpenAI.
@@ -154,17 +155,21 @@ function guestFor(req) {
 }
 function guestStatus(guest,req) {
   const used = Math.min(GUEST_LIMIT,guest?.used || 0), quota = guestQuota(req);
+  const draftUsed = guest?.draftUsed === true;
   const cookieRemaining = Math.max(0,GUEST_LIMIT-used);
   const remaining = Math.min(cookieRemaining,quota.remaining);
+  const documentRemaining = draftUsed || quota.remaining===0 ? 0 : 1;
   return { used, remaining, limit:GUEST_LIMIT,
-    // Token balance is earned/spent only on COMPLETED assistant replies.
-    // Safety-limit attempts can restrict sending but never debit this balance.
-    tokenLimit:GUEST_LIMIT*PUBLIC_TOKEN_MULTIPLIER,
-    tokensUsed:used*PUBLIC_TOKEN_MULTIPLIER,
-    tokenBalance:(GUEST_LIMIT-used)*PUBLIC_TOKEN_MULTIPLIER,
+    // 1,000 consultation tokens and a separate 600-token one-document bonus.
+    // Safety attempts never debit token balances, even if a provider fails.
+    tokenLimit:GUEST_LIMIT*PUBLIC_TOKEN_MULTIPLIER+GUEST_DOCUMENT_BONUS,
+    tokensUsed:used*PUBLIC_TOKEN_MULTIPLIER+(draftUsed?GUEST_DOCUMENT_BONUS:0),
+    tokenBalance:cookieRemaining*PUBLIC_TOKEN_MULTIPLIER+(draftUsed?0:GUEST_DOCUMENT_BONUS),
     tokenCost:PUBLIC_TOKEN_MULTIPLIER,
+    documentTokenCost:GUEST_DOCUMENT_BONUS,
+    documentRemaining,
     reminderAt:GUEST_REMINDER,
-    ...(cookieRemaining>0 && quota.restriction ? {restriction:quota.restriction}:{}),
+    ...((cookieRemaining>0||!draftUsed) && quota.restriction ? {restriction:quota.restriction}:{}),
     messages:guest?.messages.map(m=>store.publicMessage(m)) || [] };
 }
 function openGuest(req,res) {
@@ -173,7 +178,7 @@ function openGuest(req,res) {
   if (!guestQuota(req).remaining) return json(res,200,guestStatus(null,req));
   rateLimit(req,"guest-start",6,60*60000);
   const token = crypto.randomBytes(32).toString("hex");
-  const created = {hash:tokenHash(token),expiresAt:Date.now()+GUEST_MAX_AGE*1000,used:0,messages:[]};
+  const created = {hash:tokenHash(token),expiresAt:Date.now()+GUEST_MAX_AGE*1000,used:0,draftUsed:false,messages:[]};
   store.db.guests = (store.db.guests || []).filter(g=>g.expiresAt>Date.now());
   store.db.guests.push(created);
   store.save();
@@ -206,6 +211,9 @@ async function guestChat(req,res) {
   const body = await bodyJson(req);
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message || message.length > MAX_MESSAGE_CHARS) fail(400,"Сообщение пустое или слишком длинное");
+  const mode=body.mode === undefined ? "consult" : body.mode;
+  if(mode!=="consult" && mode!=="draft")
+    fail(400,"Гостям доступны консультация и один документ");
   const requestId=body.requestId===undefined ? null : String(body.requestId);
   if(requestId!==null && !/^[a-f0-9-]{36}$/i.test(requestId))
     fail(400,"Некорректный идентификатор запроса");
@@ -214,12 +222,17 @@ async function guestChat(req,res) {
   const already=requestId && guest.messages.find(m=>m.role==="assistant" && m.requestId===requestId);
   if(already){
     const original=guest.messages.find(m=>m.role==="user" && m.requestId===requestId);
-    if(!original || original.text!==message)fail(409,"Идентификатор запроса уже использован");
+    if(!original || original.text!==message || original.mode!==mode)
+      fail(409,"Идентификатор запроса уже использован");
     return json(res,200,{...guestStatus(guest,req),alreadyProcessed:true});
   }
   const initialStatus = guestStatus(guest,req);
-  if (!initialStatus.remaining) return json(res,403,{
-    error:initialStatus.restriction || "Для продолжения зарегистрируйтесь или войдите",guest:initialStatus
+  const available=mode==="draft" ? initialStatus.documentRemaining : initialStatus.remaining;
+  if (!available) return json(res,403,{
+    error:initialStatus.restriction || (mode==="draft"
+      ? "Бесплатный документ уже подготовлен. Для следующих документов зарегистрируйтесь."
+      : "Лимит бесплатных консультаций исчерпан. Перейдите в режим «Документ» или зарегистрируйтесь."),
+    guest:initialStatus
   });
   if (guestRequests.has(guest.hash) || guestRequests.size >= 6)
     fail(429,"Гостевой чат занят. Дождитесь ответа или повторите немного позже");
@@ -228,14 +241,19 @@ async function guestChat(req,res) {
   try {
     if (!process.env.OPENAI_API_KEY) fail(503,"Серверу не задан OPENAI_API_KEY");
     reserveGuestAttempt(req);
-    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],"consult",true));
+    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],mode,true));
     const previousMessages = guest.messages;
+    const previousUsed=guest.used,previousDraft=guest.draftUsed;
     guest.messages = [...previousMessages,
-      {id:randomId(),role:"user",text:message,mode:"consult",requestId,createdAt:now()},
-      {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode:"consult",requestId,createdAt:now()}];
-    guest.used++;
+      {id:randomId(),role:"user",text:message,mode,requestId,createdAt:now()},
+      {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode,requestId,createdAt:now()}];
+    if(mode==="draft")guest.draftUsed=true;
+    else guest.used++;
     try { store.save(); }
-    catch (error) { guest.used--; guest.messages=previousMessages; throw error; }
+    catch (error) {
+      guest.used=previousUsed;guest.draftUsed=previousDraft;guest.messages=previousMessages;
+      throw error;
+    }
     return json(res,200,guestStatus(guest,req));
   } finally {
     guestRequests.delete(guest.hash);

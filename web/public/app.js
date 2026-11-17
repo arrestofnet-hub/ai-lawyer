@@ -120,6 +120,18 @@ const post=(route,body)=>request(route,{method:"POST",body:JSON.stringify(body)}
 function setAppVisible(visible) {
   $("#app").style.display=visible?"grid":"none";
 }
+function guestCanSend(guest,mode=state.mode) {
+  return !!guest && (mode==="draft" ? guest.documentRemaining>0 : guest.remaining>0);
+}
+function guestHasAccess(guest) {
+  return guestCanSend(guest,"consult") || guestCanSend(guest,"draft");
+}
+function syncGuestModeButtons(guest) {
+  for(const button of $("#guestModes").querySelectorAll("button[data-mode]")){
+    button.classList.toggle("selected",button.dataset.mode===state.mode);
+    button.disabled=!guestCanSend(guest,button.dataset.mode);
+  }
+}
 function openAuth(register,{reminder=false}={}) {
   const dialog=$("#authScreen");
   if(state.guest&&state.busy&&!reminder)return;
@@ -136,27 +148,37 @@ function openAuth(register,{reminder=false}={}) {
   const guest=state.guest;
   $("#guestAuthNote").hidden=!guest;
   $("#guestAuthNote").textContent=guest?.restriction
-    || (guest?.remaining
-      ? "У вас "+guest.tokenBalance+" из "+guest.tokenLimit+" бесплатных токенов. Обычный вопрос — 100 токенов. После бесплатного лимита нужна регистрация."
-      : "Бесплатный пакет исчерпан (1 000 токенов). Для продолжения зарегистрируйтесь или войдите.");
-  $("#closeAuth").hidden=!guest||guest.remaining===0;
+    || (guestHasAccess(guest)
+      ? "У вас "+guest.tokenBalance+" из 1 600 бесплатных токенов: до 10 консультаций по 100 и один документ за 600. Остаток на документ: "+(guest.documentRemaining?600:0)+"."
+      : "Бесплатный пакет (10 консультаций и один документ) исчерпан. Для продолжения зарегистрируйтесь или войдите.");
+  $("#closeAuth").hidden=!guest||!guestHasAccess(guest);
   if(!dialog.open)dialog.showModal();
 }
 function updateGuest(guest) {
   state.guest=guest;
+  // An unused document bonus remains available after the last consultation.
+  if(!guestCanSend(guest,state.mode)) {
+    if(guest.remaining>0)state.mode="consult";
+    else if(guest.documentRemaining>0)state.mode="draft";
+  }
   $("#daily").textContent="Бесплатные токены: "+guest.tokenBalance+" / "+guest.tokenLimit+
-    (guest.restriction?" · "+guest.restriction:"");
+    " · 10 консультаций + 1 документ"+(guest.restriction?" · "+guest.restriction:"");
   $("#guestWelcome").hidden=guest.messages.length>0;
   $("#messages").hidden=!guest.messages.length;
-  $("#send").disabled=state.busy||guest.remaining===0;
-  $("#messageInput").disabled=guest.remaining===0;
-  $("#modeHint").textContent="Гостевой чат · 100 токенов за успешный ответ. При ошибке токены не списываются.";
+  $("#send").disabled=state.busy||!guestCanSend(guest);
+  $("#messageInput").disabled=!guestCanSend(guest);
+  $("#modeHint").textContent=state.mode==="draft"
+    ? "Документ · 600 бонусных токенов, один документ бесплатно. После ответа доступны Word и PDF."
+    : "Консультация · 100 токенов за успешный ответ. На один документ отдельно выделены 600 токенов.";
+  syncGuestModeButtons(guest);
   renderMessages();
 }
 function guestView(guest) {
   state.user=null;
   state.current=null;
   state.docIds.clear();
+  state.mode=guest.remaining>0 ? "consult" : guest.documentRemaining>0 ? "draft" : "consult";
+  $("#guestModes").hidden=false;
   document.body.classList.add("guest-mode");
   $("#app").hidden=false;
   setAppVisible(true);
@@ -267,15 +289,15 @@ async function boot() {
     state.prices=s.prices||state.prices;
     state.balance=s.balance??null;
     $("#freePlanDetails").textContent=s.trialCredits==null
-      ? "1 000 токенов (до 10 обычных гостевых вопросов)."
-      : "1 000 токенов (10 обычных гостевых вопросов). После подтверждённой регистрации — "+s.trialCredits+" стартовых токенов.";
+      ? "1 600 токенов: 10 гостевых консультаций (1 000) и один документ (600)."
+      : "1 600 токенов: 10 гостевых консультаций (1 000) и один документ (600). После регистрации — "+s.trialCredits+" стартовых токенов.";
     updateAuthUi();
     if(!s.authenticated) {
       const oauthError=new URLSearchParams(location.search).has("auth_error");
       if(s.guestEnabled){
         const guest=await request("/guest");
         guestView(guest);
-        if(!guest.remaining||oauthError)openAuth(!guest.remaining);
+        if(!guestHasAccess(guest)||oauthError)openAuth(!guestHasAccess(guest));
       }else{
         state.guest=null;
         document.body.classList.remove("guest-mode");
@@ -286,6 +308,7 @@ async function boot() {
       return;
     }
     state.guest=null;
+    $("#guestModes").hidden=true;
     document.body.classList.remove("guest-mode");
     $("#guestWelcome").hidden=true;
     $("#messages").hidden=false;
@@ -619,6 +642,12 @@ $("#toggleDocs").addEventListener("click",()=>{
 $("#toggleSummary").addEventListener("click",()=>{
   const p=$("#summaryPanel");p.style.display=p.style.display==="block"?"none":"block";
 });
+$("#guestModes").addEventListener("click",ev=>{
+  const button=ev.target.closest("button[data-mode]");
+  if(!button || button.disabled || state.busy || !state.guest)return;
+  state.mode=button.dataset.mode;
+  updateGuest(state.guest);
+});
 $("#modes").addEventListener("click",ev=>{
   const b=ev.target.closest("button[data-mode]");if(!b) return;
   state.mode=b.dataset.mode;
@@ -656,11 +685,11 @@ $("#messageForm").addEventListener("submit",async ev=>{
   ev.preventDefault();if(state.busy||(!state.guest&&!state.current)) return;
   const message=$("#messageInput").value.trim();if(!message) return;
   const guest=state.guest;
-  if(guest?.remaining===0){openAuth(true);return;}
+  if(guest&&!guestCanSend(guest)){openAuth(true);return;}
   const id=state.current?.case.id, mode=state.mode, docIds=[...state.docIds];
   // Reuse the same ID for a retry of the same prompt, so a late server
   // response cannot charge twice if the browser connection timed out.
-  const key=JSON.stringify({id:id||null,message,mode:guest?"consult":mode,docIds:guest?[]:docIds});
+  const key=JSON.stringify({id:id||null,message,mode,docIds:guest?[]:docIds});
   if(!state.pendingRequest || state.pendingRequest.key!==key){
     state.pendingRequest={key,id:crypto.randomUUID(),caseId:id||null};
   }
@@ -676,11 +705,12 @@ $("#messageForm").addEventListener("submit",async ev=>{
   },1000);
   try{
     if(guest){
-      const next=await post("/guest/chat",{message,requestId});
+      const next=await post("/guest/chat",{message,mode,requestId});
       state.pendingRequest=null;
       $("#messageInput").value="";
       updateGuest(next);
-      if(!next.remaining||(guest.used<next.reminderAt&&next.used>=next.reminderAt))openAuth(true,{reminder:true});
+      if(!guestHasAccess(next)||(guest.used<next.reminderAt&&next.used>=next.reminderAt))
+        openAuth(true,{reminder:true});
     }else{
       const answer=await post("/cases/"+id+"/chat",{message,mode,docIds,requestId});
       state.pendingRequest=null;
@@ -700,7 +730,7 @@ $("#messageForm").addEventListener("submit",async ev=>{
           $("#notice").textContent="Ответ получен и сохранён; повторного списания нет.";
         }else{
           showError(e.message+" Токены за ответ не списаны. Повторите попытку.");
-          if(!latest.remaining)openAuth(true,{reminder:true});
+          if(!guestHasAccess(latest))openAuth(true,{reminder:true});
         }
       }catch{showError(e.message+" Проверьте историю перед повторной отправкой.");}
     }else{
@@ -719,7 +749,7 @@ $("#messageForm").addEventListener("submit",async ev=>{
   }finally{
     clearInterval(progress);
     state.busy=false;
-    $("#send").disabled=state.guest?.remaining===0;
+    $("#send").disabled=state.guest?!guestCanSend(state.guest):false;
     $("#send").textContent="Отправить";
   }
 });
