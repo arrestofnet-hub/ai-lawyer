@@ -51,19 +51,19 @@ test("failed AI calls do not debit public tokens, and retries are idempotent",as
     const guestStart=await call("/guest");
     const guestCookie=guestStart.headers.get("set-cookie").split(";")[0];
     const initial=await guestStart.json();
-    assert.equal(initial.tokenLimit,1000);
-    assert.equal(initial.tokenBalance,1000);
+    assert.equal(initial.tokenLimit,1600);
+    assert.equal(initial.tokenBalance,1600);
     const failedGuest=await call("/guest/chat",guestCookie,{message:"FAIL",requestId:crypto.randomUUID()});
     assert.equal(failedGuest.status,502);
     const guestAfter=await (await call("/guest",guestCookie)).json();
     assert.equal(guestAfter.used,0);
-    assert.equal(guestAfter.tokenBalance,1000,"failed model request must not spend user tokens");
+    assert.equal(guestAfter.tokenBalance,1600,"failed model request must not spend user tokens");
     const guestRequestId=crypto.randomUUID();
     const guestDone=await call("/guest/chat",guestCookie,{message:"OK",requestId:guestRequestId});
     assert.equal(guestDone.status,200);
-    assert.equal((await guestDone.json()).tokenBalance,900);
+    assert.equal((await guestDone.json()).tokenBalance,1500);
     const duplicateGuest=await (await call("/guest/chat",guestCookie,{message:"OK",requestId:guestRequestId})).json();
-    assert.equal(duplicateGuest.tokenBalance,900);
+    assert.equal(duplicateGuest.tokenBalance,1500);
     assert.equal(duplicateGuest.alreadyProcessed,true);
 
     const signup=await call("/auth/register",null,{email:"credits@example.kz",password:"verylongpassword1",invite:"invite-test"});
