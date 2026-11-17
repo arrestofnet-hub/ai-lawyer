@@ -47,7 +47,7 @@ test("guest exports, email confirmation after lost cookie, and existing-account 
   }
   async function checkFile(route,cookie,signature,contentType){
     const response=await call(route,cookie);
-    assert.equal(response.status,200,route+" "+await response.text().catch(()=>""));
+    if(response.status!==200)throw Error(route+" returned "+response.status+": "+await response.text());
     assert.match(response.headers.get("content-type")||"",contentType);
     const file=Buffer.from(await response.arrayBuffer());
     assert.ok(file.length>250);
