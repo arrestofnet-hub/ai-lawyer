@@ -87,6 +87,9 @@ test("guest exports, email confirmation after lost cookie, and existing-account 
     const registered=await verified.json();
     assert.ok(registered.guestCaseId);
     const sessionCookie=verified.headers.get("set-cookie").split(";")[0];
+    const verifiedProfile=await (await call("/session",sessionCookie)).json();
+    assert.equal(verifiedProfile.balance,37000,
+      "20k verified grant PLUS 17k remaining after two 1.5k guest questions");
     const cases=await (await call("/cases",sessionCookie)).json();
     assert.equal(cases.cases.length,1);
     const saved=await (await call("/cases/"+registered.guestCaseId,sessionCookie)).json();
@@ -104,6 +107,9 @@ test("guest exports, email confirmation after lost cookie, and existing-account 
     const loginData=await login.json();
     assert.ok(loginData.guestCaseId);
     const accountCookie=login.headers.get("set-cookie").split(";")[0];
+    const afterLogin=await (await call("/session",accountCookie)).json();
+    assert.equal(afterLogin.balance,37000,
+      "existing account login must NOT add a second guest bonus");
     const after=await (await call("/cases",accountCookie)).json();
     assert.equal(after.cases.length,2);
     const newest=await (await call("/cases/"+loginData.guestCaseId,accountCookie)).json();
