@@ -4,12 +4,13 @@ import {RATES,estimateProviderCost,sumEstimatedProviderCost} from "../pricing.mj
 import {GUEST_PUBLIC_TOKENS,GUEST_CONSULT_COST,GUEST_DOCUMENT_COST,
   PACKAGES,TRIAL_CREDITS,remainingGuestTokens,displayTokens} from "../referrals.mjs";
 
-test("pricing defines 20k guest, 20k registration, 100k/500k/1m purchasable offer labels",()=>{
+test("pricing defines 20k free guest and signup packages from 990 to 9990 KZT",()=>{
   assert.equal(GUEST_PUBLIC_TOKENS,20000);
   assert.equal(GUEST_CONSULT_COST*10+GUEST_DOCUMENT_COST,20000);
   assert.equal(TRIAL_CREDITS*100,20000);
-  assert.deepEqual(PACKAGES.map(x=>x.tokens),[100000,500000,1000000]);
-  assert.deepEqual(PACKAGES.map(x=>x.priceKzt),[19900,94900,179900]);
+  assert.deepEqual(PACKAGES.map(x=>x.tokens),[10000,25000,45000,90000,200000]);
+  assert.deepEqual(PACKAGES.map(x=>x.priceKzt),[990,1990,2990,4990,9990]);
+  assert.deepEqual(PACKAGES.map(x=>x.name),["Пробный","Старт","Плюс","Практика","Профессиональный"]);
   assert.equal(remainingGuestTokens({used:0,draftUsed:false}),20000);
   assert.equal(remainingGuestTokens({used:5,draftUsed:false}),12500);
   assert.equal(remainingGuestTokens({used:5,draftUsed:true}),7500);
