@@ -94,7 +94,9 @@ function sessionFor(req) {
   const hash = tokenHash(raw);
   const s = store.db.sessions.find(x => x.hash === hash && x.expiresAt > Date.now());
   if (!s) return null;
-  return store.db.users.find(x => x.id === s.userId) || null;
+  const user=store.db.users.find(x => x.id === s.userId) || null;
+  if(user)grandfatherTrialBalance(user);
+  return user;
 }
 function requireUser(req) { const u = sessionFor(req); if (!u) fail(401,"Требуется вход"); return u; }
 function sessionCookie(token, maxAge) {
@@ -343,10 +345,11 @@ function charge(userId,credits=1) {
   store.db.usage = store.db.usage.filter(u => u.date >= new Date(Date.now()-14*86400000).toISOString().slice(0,10));
 }
 function verifyCreditAccess(user,cost){
-  if(countToday(user.id)+cost>DAILY_LIMIT)
+  const limit=user.accountType==="trial"?DAILY_LIMIT:Math.max(DAILY_LIMIT,5000);
+  if(countToday(user.id)+cost>limit)
     fail(429,"Дневной лимит AI-токенов исчерпан. Обновится в 00:00 UTC");
   if(!canSpend(user,cost))
-    fail(402,"Недостаточно AI-токенов. Пополнение пока недоступно");
+    fail(402,"Недостаточно AI-токенов. Выберите пакет пополнения в разделе «Тарифы». Оплата пока подключается.");
 }
 function completeCreditOperation(user,cost){
   spendCredits(user,cost);
@@ -381,7 +384,8 @@ function commitBilledAnswer(user,caseData,cost,mutation) {
 function profile(user){
   return {balance:displayTokens(balanceOf(user)),
     dailyUsed:user?displayTokens(countToday(user.id)):0,
-    dailyLimit:displayTokens(DAILY_LIMIT),priceUnit:"токены AI Lawyer",prices:{
+    dailyLimit:displayTokens(user?.accountType==="trial"?DAILY_LIMIT:Math.max(DAILY_LIMIT,5000)),
+    priceUnit:"токены AI Lawyer",prices:{
     consult:displayTokens(aiTokenCost("consult")),audit:displayTokens(aiTokenCost("audit")),
     strategy:displayTokens(aiTokenCost("strategy")),draft:displayTokens(aiTokenCost("draft")),
     review:displayTokens(aiTokenCost("review")),compact:displayTokens(aiTokenCost("compact"))
@@ -394,7 +398,8 @@ async function api(req,res,url) {
     const user = sessionFor(req);
     return json(res,200,{
       authenticated:!!user,user:user?safeUser(user):null,
-      configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(DAILY_LIMIT),
+      configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(user?.accountType==="trial"?DAILY_LIMIT:Math.max(DAILY_LIMIT,5000)),
+      packages:PACKAGES,paymentsEnabled:false,
       signupMode:mailEnabled()?"email":process.env.SIGNUP_INVITE_CODE?"invite":"disabled",
       emailVerificationEnabled:mailEnabled(),referralBonus:displayTokens(REFERRAL_BONUS),
       prices:profile(user).prices,
@@ -494,10 +499,10 @@ async function api(req,res,url) {
     try{grant=allocateVerifiedRegistration(store.db,pending.referralCode);}
     catch{fail(409,"Партнёрский код больше недействителен. Начните регистрацию заново");}
     const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now(),
-      credits:grant.credits,accountType:"trial",referralCode:grant.referralCode,
+      credits:grant.credits,accountType:"trial",freeCreditVersion:2,referralCode:grant.referralCode,
       referralSource:pending.referralSource||null};
     store.db.users.push(u);
-    const guestCaseId=saveGuestConversation(req,u,pending.guestHash);
+    const guestCaseId=saveGuestConversation(req,u,pending.guestHash,true);
     store.save();newSession(u,res,pending.remember);
     return json(res,201,{user:safeUser(u),guestCaseId});
   }
@@ -798,9 +803,9 @@ const server=http.createServer(async(req,res)=>{
             const grant=allocateVerifiedRegistration(store.db,flow.referralCode);
             user={id:randomId(),email:identity.email,pass:null,googleSub:identity.sub,
               emailVerified:true,createdAt:now(),credits:grant.credits,
-              accountType:"trial",referralCode:grant.referralCode,
+              accountType:"trial",freeCreditVersion:2,referralCode:grant.referralCode,
               referralSource:flow.referralSource||null};
-            store.db.users.push(user);saveGuestConversation(req,user,flow.guestHash);store.save();
+            store.db.users.push(user);saveGuestConversation(req,user,flow.guestHash,true);store.save();
             registered=true;
           } else {
             // Existing Google account: migrate the still-unclaimed guest chat too.
