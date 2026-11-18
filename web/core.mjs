@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import {dossierPromptContext} from "./legal/dossier.mjs";
 
 export const MAX_FILE_BYTES = 7 * 1024 * 1024;
 export const MAX_MESSAGE_CHARS = 14000;
@@ -122,7 +123,9 @@ export function buildMessages(messages, currentText, documents, caseData) {
       content.push({ type:"input_file", filename:d.filename, file_data:`data:${d.type};base64,${base64}` });
     }
   }
-  const context = `ДЕЛО: ${caseData.title}\nЦЕЛЬ: ${caseData.objective || "не установлена"}\nСОХРАНЁННАЯ СВОДКА: ${caseData.summary || "ещё не сформирована"}\nРЕЖИМ: ${caseData.mode || "consult"}\nДата UTC: ${new Date().toISOString().slice(0,10)}`;
+  const context = `ДЕЛО: ${caseData.title}\nЦЕЛЬ: ${caseData.objective || "не установлена"}\nСОХРАНЁННАЯ СВОДКА: ${caseData.summary || "ещё не сформирована"}\nРЕЖИМ: ${caseData.mode || "consult"}\nДата UTC: ${new Date().toISOString().slice(0,10)}`
+    + dossierPromptContext(caseData.dossier)
+    + (caseData.localNormContext || "");
   return [{ role:"user", content: context }, ...prior, { role:"user", content }];
 }
 export function strategyInstruction(legalSpec, mode) {
