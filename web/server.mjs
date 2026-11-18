@@ -23,6 +23,8 @@ import {
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
+import {blankDossier,validateDossier,dossierView,dossierPromptContext} from "./legal/dossier.mjs";
+import {loadLegalCorpus,buildLegalContext,legalCorpusStatus} from "./legal/norms.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -31,6 +33,9 @@ const KEY = dataKey(process.env.DATA_KEY);
 const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data"), KEY);
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
+// This empty-by-default corpus can only contain source-dated official legal
+// passages; do not invent laws when no reviewed passages have been imported.
+const localNorms=loadLegalCorpus(path.join(dirname,"legal","corpus.json"));
 // Unified Sol model for both free and future paid accounts. An explicit new
 // variable controls exceptions; legacy OPENAI_MODEL may still point to Astra
 // on older VPS installations, so intentionally do not inherit that setting.
@@ -346,7 +351,9 @@ async function askModel(payload) {
     webCalls:Array.isArray(data.output)?data.output.filter(x=>x.type==="web_search_call").length:0 };
 }
 function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
-  const input = buildMessages(creditAccount?history.slice(-10):history, message, docs, { ...caseData, mode });
+  const localNormContext=buildLegalContext(localNorms,message+" "+(caseData.objective||""));
+  const input = buildMessages(creditAccount?history.slice(-10):history, message, docs,
+    { ...caseData, mode, localNormContext });
   return {
     model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" +
       selectLegalPlaybooks(playbooks,message,caseData.summary),mode),
@@ -416,6 +423,10 @@ function profile(user){
 
 async function api(req,res,url) {
   const p = url.pathname;
+  if (req.method === "GET" && p === "/chat/api/legal/status") {
+    return json(res,200,{...legalCorpusStatus(localNorms),
+      note:"Пустая или устаревшая локальная база не подтверждает действующее законодательство. Нормы сверяйте по официальным источникам."});
+  }
   if (req.method === "GET" && p === "/chat/api/session") {
     const user = sessionFor(req);
     return json(res,200,{
@@ -601,15 +612,35 @@ async function api(req,res,url) {
     if (store.db.cases.filter(c=>c.ownerId===u.id&&!c.deletedAt).length >= MAX_CASES_PER_USER) fail(400,"Достигнут лимит дел");
     const title=String(b.title||"").trim().slice(0,160), objective=String(b.objective||"").trim().slice(0,1000);
     if (!title) fail(400,"Укажите название дела");
-    const c={id:randomId(),ownerId:u.id,title,objective,summary:"",createdAt:now(),updatedAt:now()};
+    const c={id:randomId(),ownerId:u.id,title,objective,summary:"",
+      dossier:blankDossier(),dossierHistory:[],createdAt:now(),updatedAt:now()};
     store.db.cases.push(c);store.save();
     return json(res,201,{case:store.publicCase(c)});
   }
-  const match = p.match(/^\/chat\/api\/cases\/([a-f0-9-]{36})(?:\/(documents|chat|compact))?(?:\/([a-f0-9-]{36}))?$/);
+  const match = p.match(/^\/chat\/api\/cases\/([a-f0-9-]{36})(?:\/(documents|chat|compact|dossier))?(?:\/([a-f0-9-]{36}))?$/);
   if (!match) fail(404,"Ресурс не найден");
   const id=match[1], action=match[2], subId=match[3];
   const {u,c}=ownedCase(req,id);
 
+  if (req.method==="GET" && action==="dossier" && !subId) {
+    const messages=store.db.messages.filter(m=>m.caseId===id);
+    const documents=store.db.documents.filter(d=>d.caseId===id);
+    return json(res,200,dossierView(c,messages,documents));
+  }
+  if (req.method==="PATCH" && action==="dossier" && !subId) {
+    const body=await bodyJson(req,115000);
+    const messages=store.db.messages.filter(m=>m.caseId===id);
+    const documents=store.db.documents.filter(d=>d.caseId===id);
+    const next=validateDossier(body,c.dossier||blankDossier(),documents,messages);
+    const previous=c.dossier,priorHistory=c.dossierHistory,priorUpdated=c.updatedAt;
+    c.dossier=next;
+    c.dossierHistory=[...(priorHistory||[]),
+      ...(previous?.revision>0?[{...previous,archivedAt:now()}]:[])].slice(-20);
+    c.updatedAt=now();
+    try{store.save();}
+    catch(e){c.dossier=previous;c.dossierHistory=priorHistory;c.updatedAt=priorUpdated;throw e;}
+    return json(res,200,dossierView(c,messages,documents));
+  }
   if (req.method==="GET" && !action) {
     const messages=store.db.messages.filter(m=>m.caseId===id).map(m=>store.publicMessage(m));
     const documents=store.db.documents.filter(d=>d.caseId===id).map(d=>store.publicDocument(d));
@@ -628,7 +659,7 @@ async function api(req,res,url) {
     for(const d of store.db.documents.filter(d=>d.caseId===id)) store.deleteFile(d.id);
     store.db.documents=store.db.documents.filter(d=>d.caseId!==id);
     store.db.messages=store.db.messages.filter(m=>m.caseId!==id);
-    c.deletedAt=now();c.summary="";store.save();
+    c.deletedAt=now();c.summary="";c.dossier=null;c.dossierHistory=[];store.save();
     return json(res,200,{deleted:true});
   }
   if (req.method==="POST" && action==="documents" && !subId) {
