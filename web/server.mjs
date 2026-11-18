@@ -21,6 +21,7 @@ import {
   validateEmail, validPassword, hashPassword, checkPassword, tokenHash, dataKey,
   randomId, classifyFile, extractOutput, buildMessages, strategyInstruction,
 } from "./core.mjs";
+import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -31,6 +32,7 @@ const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
 const FREE_MODEL = process.env.FREE_TIER_OPENAI_MODEL || "gpt-6.1-sol";
+const FREE_API_BUDGET_USD=Math.max(1,Math.min(1000,Number(process.env.FREE_API_BUDGET_USD||15)));
 const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
 // Legacy MAX_MESSAGES_PER_DAY is in stored credits (100 public tokens each).
 const DAILY_LIMIT = Math.max(200, Number(process.env.MAX_MESSAGES_PER_DAY || 200));
@@ -145,6 +147,15 @@ function guestQuota(req, at=Date.now()) {
     ? "Суточный лимит бесплатных обращений сервиса исчерпан. Зарегистрируйтесь или войдите."
     : null;
   return { identity, remaining, restriction };
+}
+function enforceFreeApiBudget() {
+  if(sumEstimatedProviderCost(store.db.providerUsage,true)>=FREE_API_BUDGET_USD)
+    fail(503,"Бесплатный бюджет AI временно исчерпан. Токены не списаны. Обратитесь в поддержку.");
+}
+function recordProviderUsage(result,user,free) {
+  const quote=estimateProviderCost(result.model,result.usage,result.webCalls);
+  if(!quote)return;
+  (store.db.providerUsage??=[]).push({at:now(),userId:user?.id||null,free:free===true,...quote});
 }
 function reserveGuestAttempt(req) {
   const at = Date.now(), quota = guestQuota(req,at);
@@ -274,18 +285,22 @@ async function guestChat(req,res) {
   guestRequests.add(guest.hash);
   try {
     if (!process.env.OPENAI_API_KEY) fail(503,"Серверу не задан OPENAI_API_KEY");
+    enforceFreeApiBudget();
     reserveGuestAttempt(req);
     const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],mode,true,true));
     const previousMessages = guest.messages;
     const previousUsed=guest.used,previousDraft=guest.draftUsed;
+    const previousCostCount=store.db.providerUsage?.length||0;
     guest.messages = [...previousMessages,
       {id:randomId(),role:"user",text:message,mode,requestId,createdAt:now()},
       {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode,requestId,createdAt:now()}];
     if(mode==="draft")guest.draftUsed=true;
     else guest.used++;
+    recordProviderUsage(result,null,true);
     try { store.save(); }
     catch (error) {
       guest.used=previousUsed;guest.draftUsed=previousDraft;guest.messages=previousMessages;
+      if(store.db.providerUsage)store.db.providerUsage.length=previousCostCount;
       throw error;
     }
     return json(res,200,guestStatus(guest,req));
@@ -323,7 +338,8 @@ async function askModel(payload) {
   }
   const parsed = extractOutput(data);
   if (!parsed.text) fail(502,"Модель не вернула текстового ответа");
-  return { ...parsed, usage:data.usage || null };
+  return { ...parsed, usage:data.usage || null,model:payload.model,
+    webCalls:Array.isArray(data.output)?data.output.filter(x=>x.type==="web_search_call").length:0 };
 }
 function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs, { ...caseData, mode });
@@ -358,7 +374,7 @@ function completeCreditOperation(user,cost){
 function snapshotBilling(user,caseData) {
   return {userCredits:user.credits,hadCredits:Object.hasOwn(user,"credits"),
     used:store.db.usage.map(x=>({...x})),
-    messageCount:store.db.messages.length,
+    messageCount:store.db.messages.length,costCount:store.db.providerUsage?.length||0,
     updatedAt:caseData.updatedAt,summary:caseData.summary};
 }
 function rollbackBilling(user,caseData,before) {
@@ -366,6 +382,7 @@ function rollbackBilling(user,caseData,before) {
   else delete user.credits;
   store.db.usage=before.used;
   store.db.messages.length=before.messageCount;
+  if(store.db.providerUsage)store.db.providerUsage.length=before.costCount;
   caseData.updatedAt=before.updatedAt;
   caseData.summary=before.summary;
 }
@@ -657,12 +674,13 @@ async function api(req,res,url) {
     if(balanceOf(u)!==null&&docs.reduce((sum,d)=>sum+d.bytes.length,0)>1500000)
       fail(413,"Пробный тариф: объём выбранных файлов для одного анализа не должен превышать 1,5 МБ");
     verifyCreditAccess(u,cost);
+    if(u.accountType==="trial")enforceFreeApiBudget();
     if(activeModelRequests.has(u.id))fail(429,"Другой запрос уже обрабатывается. Дождитесь ответа");
     activeModelRequests.add(u.id);
     try {
     const history=store.db.messages.filter(m=>m.caseId===id);
     const first=await askModel(baseRequest(c,history,message,docs,mode,balanceOf(u)!==null,u.accountType==="trial"));
-    let result=first;
+    let result=first,critiqueResult=null;
     if (["strategy","review"].includes(mode) && process.env.SECOND_PASS_ENABLED!=="0") {
       // An actual separate skeptical review, not a claim that one was conducted.
       const critique = await askModel({
@@ -670,10 +688,13 @@ async function api(req,res,url) {
         instructions:"Ты независимый юридический ревизор Республики Казахстан. Найди фактические, доказательственные, процессуальные и нормативные ошибки. Не придумывай нормы и не подтверждай их без источников. Дай ИСПРАВЛЕННУЮ окончательную позицию, сохрани сильные аргументы, укажи степень достоверности.",
         input:`Задача клиента: ${message}\nКарточка дела: ${c.title} / ${c.objective}; контекст: ${(c.summary||"").slice(0,7000)}\nПервоначальный ответ: ${first.text}\nСделай независимую проверку и напиши итоговый ответ.`,
       });
+      critiqueResult=critique;
       result={text:critique.text,sources:[...first.sources,...critique.sources.filter(s=>!first.sources.some(t=>t.url===s.url))]};
     }
     const time=now();
     commitBilledAnswer(u,c,cost,()=>{
+      recordProviderUsage(first,u,u.accountType==="trial");
+      if(critiqueResult)recordProviderUsage(critiqueResult,u,u.accountType==="trial");
       store.db.messages.push({id:randomId(),caseId:id,role:"user",text:message,mode,requestId,createdAt:time});
       store.db.messages.push({id:randomId(),caseId:id,role:"assistant",text:result.text,
         sources:result.sources,mode,requestId,createdAt:now()});
@@ -686,6 +707,7 @@ async function api(req,res,url) {
   if (req.method==="POST" && action==="compact") {
     const cost=aiTokenCost("compact");
     verifyCreditAccess(u,cost);
+    if(u.accountType==="trial")enforceFreeApiBudget();
     if(activeModelRequests.has(u.id))fail(429,"Другой запрос уже обрабатывается. Дождитесь ответа");
     const messages=store.db.messages.filter(m=>m.caseId===id).slice(balanceOf(u)!==null?-25:-80);
     if(!messages.length) fail(400,"В деле пока нет сообщений");
@@ -697,6 +719,7 @@ async function api(req,res,url) {
       input:`Название: ${c.title}\nЦель: ${c.objective}\nПрежняя карточка:\n${c.summary}\nИстория:\n${messages.map(m=>m.role+": "+m.text).join("\n\n").slice(-85000)}`,
     });
     commitBilledAnswer(u,c,cost,()=>{
+      recordProviderUsage(digest,u,u.accountType==="trial");
       c.summary=digest.text.slice(0,30000);c.updatedAt=now();
     });
     return json(res,200,{summary:c.summary,cost:displayTokens(cost),...profile(u)});
