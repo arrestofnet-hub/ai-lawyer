@@ -1,9 +1,39 @@
 import crypto from "node:crypto";
 import nodemailer from "nodemailer";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, customFetch } from "jose";
+import { Agent, ProxyAgent } from "undici";
 
 const OAUTH_COOKIE="al_google_state";
-const jwks=createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
+// Only Google's OAuth transport is IPv4-pinned; do not change networking for
+// OpenAI, SMTP, or other parts of the server. On the pilot VPS Google's token
+// endpoint timed out from Node despite valid credentials and working Google UI.
+const googleDispatcher = process.env.GOOGLE_HTTPS_PROXY
+  ? new ProxyAgent(process.env.GOOGLE_HTTPS_PROXY)
+  : new Agent({connect:{family:4,timeout:12000},connections:4});
+const googleFetch = (url,options={}) => fetch(url,{...options,dispatcher:googleDispatcher});
+const jwks=createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"),{
+  timeoutDuration:15000,
+  [customFetch]:googleFetch,
+});
+export class GoogleOAuthError extends Error {
+  constructor(code,status=0,cause) {
+    super("Google OAuth failed: "+code,{cause});
+    this.code=code;
+    this.status=status;
+  }
+}
+export function googleOAuthFailure(e) {
+  const code=String(e?.code||"");
+  if(code==="GOOGLE_TOKEN_NETWORK"||code==="GOOGLE_JWKS_NETWORK")return "google_network_failed";
+  if(code==="GOOGLE_TOKEN_REJECTED")return "google_token_rejected";
+  if(code==="GOOGLE_IDENTITY_INVALID")return "google_identity_failed";
+  if(code==="GOOGLE_SIGNUP_DISABLED")return "google_signup_disabled";
+  if(code==="GOOGLE_SIGNUP_LIMIT")return "google_signup_limited";
+  if(code==="GOOGLE_STATE_INVALID")return "google_state_invalid";
+  if(code==="GOOGLE_CANCELLED")return "google_cancelled";
+  if(code==="GOOGLE_LINK_MISMATCH")return "google_link_mismatch";
+  return "google_login_failed";
+}
 const b64=value=>Buffer.from(value).toString("base64url");
 const hmac=(data,key)=>crypto.createHmac("sha256",key).update(data).digest("base64url");
 export const redirectUri=origin=>origin+"/chat/auth/google/callback";
@@ -31,13 +61,13 @@ export function verifyGoogleCookie(raw,key) {
     throw Error("Expired OAuth state");
   return payload;
 }
-export function googleStart({origin,key,remember,linkUserId=null,linkSessionHash=null,referralCode="",referralSource=""}) {
+export function googleStart({origin,key,remember,linkUserId=null,linkSessionHash=null,referralCode="",referralSource="",guestHash=null}) {
   if(!googleEnabled())throw Error("Google OAuth is not configured");
   const state=crypto.randomBytes(24).toString("base64url");
   const nonce=crypto.randomBytes(24).toString("base64url");
   const verifier=crypto.randomBytes(48).toString("base64url");
   const challenge=crypto.createHash("sha256").update(verifier).digest("base64url");
-  const payload={state,nonce,verifier,issued:Date.now(),remember:!!remember,linkUserId,linkSessionHash,referralCode,referralSource};
+  const payload={state,nonce,verifier,issued:Date.now(),remember:!!remember,linkUserId,linkSessionHash,referralCode,referralSource,guestHash};
   const url=new URL("https://accounts.google.com/o/oauth2/v2/auth");
   for(const [k,v] of Object.entries({
     client_id:process.env.GOOGLE_CLIENT_ID,
@@ -49,28 +79,43 @@ export function googleStart({origin,key,remember,linkUserId=null,linkSessionHash
   return {url:url.toString(),cookie:signedGoogleCookie(payload,key,origin.startsWith("https:"))};
 }
 export async function googleIdentity(code,flow,origin) {
-  if(typeof code!=="string"||code.length>4000)throw Error("Invalid authorization code");
-  const response=await fetch("https://oauth2.googleapis.com/token",{
-    method:"POST",
-    headers:{"content-type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({
-      code,client_id:process.env.GOOGLE_CLIENT_ID,
-      client_secret:process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri:redirectUri(origin),grant_type:"authorization_code",
-      code_verifier:flow.verifier,
-    }),signal:AbortSignal.timeout(20000)
-  });
-  if(!response.ok)throw Error("Google authorization failed");
-  const data=await response.json();
-  if(typeof data.id_token!=="string")throw Error("No ID token");
-  const {payload}=await jwtVerify(data.id_token,jwks,{
-    issuer:["https://accounts.google.com","accounts.google.com"],
-    audience:process.env.GOOGLE_CLIENT_ID,
-    clockTolerance:15,
-  });
+  if(typeof code!=="string"||code.length>4000)throw new GoogleOAuthError("GOOGLE_TOKEN_REJECTED");
+  let response;
+  try {
+    response=await googleFetch("https://oauth2.googleapis.com/token",{
+      method:"POST",
+      headers:{"content-type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({
+        code,client_id:process.env.GOOGLE_CLIENT_ID,
+        client_secret:process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri:redirectUri(origin),grant_type:"authorization_code",
+        code_verifier:flow.verifier,
+      }),signal:AbortSignal.timeout(20000)
+    });
+  } catch(e) { throw new GoogleOAuthError("GOOGLE_TOKEN_NETWORK",0,e); }
+  // Do not log or return the upstream body: it may contain sensitive details.
+  if(!response.ok)throw new GoogleOAuthError("GOOGLE_TOKEN_REJECTED",response.status);
+  let data;
+  try { data=await response.json(); }
+  catch(e) { throw new GoogleOAuthError("GOOGLE_TOKEN_REJECTED",response.status,e); }
+  if(typeof data.id_token!=="string")throw new GoogleOAuthError("GOOGLE_IDENTITY_INVALID");
+  let payload;
+  try {
+    ({payload}=await jwtVerify(data.id_token,jwks,{
+      issuer:["https://accounts.google.com","accounts.google.com"],
+      audience:process.env.GOOGLE_CLIENT_ID,
+      clockTolerance:15,
+    }));
+  } catch(e) {
+    const code=String(e?.code||"");
+    const network=/fetch|timeout|connection/i.test(String(e?.message||""))||
+      ["ERR_JWKS_TIMEOUT","ERR_JWKS_FETCH_FAILED"].includes(code)||
+      ["ETIMEDOUT","UND_ERR_CONNECT_TIMEOUT","ENETUNREACH","EHOSTUNREACH"].includes(String(e?.cause?.code||""));
+    throw new GoogleOAuthError(network?"GOOGLE_JWKS_NETWORK":"GOOGLE_IDENTITY_INVALID",0,e);
+  }
   if(payload.nonce!==flow.nonce||typeof payload.sub!=="string"||
      payload.email_verified!==true||typeof payload.email!=="string")
-    throw Error("Google identity invalid");
+    throw new GoogleOAuthError("GOOGLE_IDENTITY_INVALID");
   return {sub:payload.sub,email:payload.email.trim().toLowerCase()};
 }
 export function newEmailCode() {

@@ -79,7 +79,7 @@ async function downloadExport(caseId,messageId,format,button) {
 }
 const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(),
   busy:false, registered:false, awaitingCode:false, signupMode:"invite",
-  legacyInviteVisible:false, googleEnabled:false, dailyLimit:0,balance:null,
+  legacyInviteVisible:false, googleEnabled:false, googleSignupEnabled:false, dailyLimit:0,balance:null,
   pendingRequest:null,
   prices:{consult:100,audit:600,strategy:800,draft:600,review:800,compact:200}
 };
@@ -272,7 +272,24 @@ function oauthMessage() {
   const error=p.get("auth_error");
   const notice=p.get("auth_notice");
   if(error==="google_link_required") showError("Почта уже зарегистрирована. Войдите с паролем, затем нажмите «Подключить Google».","#authError");
-  else if(error==="google_login_failed")showError("Не удалось войти через Google. Проверьте настройки или попробуйте снова.","#authError");
+  else if(error==="google_network_failed")
+    showError("Сервер не смог связаться с Google. Пожалуйста, повторите попытку позже.","#authError");
+  else if(error==="google_token_rejected")
+    showError("Google отклонил авторизацию. Повторите вход; если ошибка сохраняется, обратитесь в поддержку.","#authError");
+  else if(error==="google_signup_disabled")
+    showError("Вход Google настроен, но создание новых аккаунтов через Google пока выключено. Зарегистрируйтесь по email.","#authError");
+  else if(error==="google_signup_limited")
+    showError("Лимит новых Google-регистраций временно исчерпан. Попробуйте позже или используйте email.","#authError");
+  else if(error==="google_identity_failed")
+    showError("Не удалось проверить данные Google. Попробуйте войти повторно.","#authError");
+  else if(error==="google_state_invalid")
+    showError("Сеанс входа Google истёк или был открыт в другой вкладке. Начните вход снова.","#authError");
+  else if(error==="google_cancelled")
+    showError("Вход через Google был отменён.","#authError");
+  else if(error==="google_link_mismatch")
+    showError("Для привязки выберите Google-аккаунт с тем же email, что у вашего кабинета.","#authError");
+  else if(error==="google_login_failed")
+    showError("Не удалось войти через Google. Попробуйте позже либо используйте email.","#authError");
   else if(notice==="google_linked")showError("Аккаунт Google успешно подключён.","#notice");
   else if(notice==="google_registered"&&state.user)$("#plans").showModal();
   if(error||notice){
@@ -286,6 +303,12 @@ async function boot() {
     const s=await request("/session");
     state.signupMode=s.signupMode||"invite";
     state.googleEnabled=!!s.googleEnabled;
+    state.googleSignupEnabled=!!s.googleSignupEnabled;
+    $("#googleAuthHelp").textContent=!state.googleEnabled
+      ? "Вход через Google сейчас недоступен."
+      : state.googleSignupEnabled
+        ? "Через Google можно войти или создать новый аккаунт."
+        : "Вход Google доступен для привязанных аккаунтов. Новые аккаунты пока создаются через email.";
     state.prices=s.prices||state.prices;
     state.balance=s.balance??null;
     $("#freePlanDetails").textContent=s.trialCredits==null

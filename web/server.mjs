@@ -12,6 +12,7 @@ import {
 } from "./referrals.mjs";
 import {
   googleEnabled, mailEnabled, googleStart, googleIdentity, verifyGoogleCookie, clearGoogleCookie,
+  GoogleOAuthError, googleOAuthFailure,
   newEmailCode, emailCodeHash, emailCodeMatches, sendVerificationCode, sendPasswordResetCode
 } from "./auth.mjs";
 import {
@@ -40,6 +41,10 @@ const GUEST_ENABLED = process.env.GUEST_CHAT_ENABLED !== "0";
 // All guest attempts, including upstream failures, count toward these cost guards.
 const GUEST_IP_30D_MAX = Math.max(1, Math.min(100, Number(process.env.GUEST_IP_30D_MAX || 12)));
 const GUEST_GLOBAL_24H_MAX = Math.max(1, Math.min(10000, Number(process.env.GUEST_GLOBAL_24H_MAX || 40)));
+// New Google accounts grant free credits; a separate encrypted, HMAC-keyed
+// registration ledger limits cost abuse without storing raw visitor IPs.
+const GOOGLE_NEW_IP_30D_MAX = Math.max(1, Math.min(20,Number(process.env.GOOGLE_NEW_IP_30D_MAX || 2)));
+const GOOGLE_NEW_GLOBAL_24H_MAX = Math.max(1, Math.min(100,Number(process.env.GOOGLE_NEW_GLOBAL_24H_MAX || 20)));
 const DAY_MS = 86400000;
 const GUEST_CASE = { title:"Гостевая консультация", objective:"", summary:"" };
 const guestRequests = new Set();
@@ -146,6 +151,21 @@ function reserveGuestAttempt(req) {
     .concat({identity:quota.identity,at});
   try { store.save(); }
   catch (error) { store.db.guestAttempts=previous; throw error; }
+}
+function reserveGoogleSignup(req) {
+  const at=Date.now();
+  const identity=crypto.createHmac("sha256",KEY)
+    .update("google-registration-ip-v1:"+clientIp(req).toLowerCase()).digest("hex");
+  const recent=(store.db.googleSignups||[])
+    .filter(x=>Number.isFinite(x.at)&&x.at>at-30*DAY_MS);
+  const perIp=recent.filter(x=>x.identity===identity).length;
+  const global24h=recent.filter(x=>x.at>at-DAY_MS).length;
+  if(perIp>=GOOGLE_NEW_IP_30D_MAX || global24h>=GOOGLE_NEW_GLOBAL_24H_MAX)
+    throw new GoogleOAuthError("GOOGLE_SIGNUP_LIMIT");
+  const previous=store.db.googleSignups;
+  store.db.googleSignups=recent.concat({identity,at});
+  try{store.save();}
+  catch(error){store.db.googleSignups=previous;throw error;}
 }
 function guestFor(req) {
   const token = cookies(req).al_guest;
@@ -367,7 +387,8 @@ async function api(req,res,url) {
       emailVerificationEnabled:mailEnabled(),referralBonus:displayTokens(REFERRAL_BONUS),
       prices:profile(user).prices,
       ...(user?profile(user):{}),
-      googleEnabled:googleEnabled(), guestEnabled:GUEST_ENABLED, trialCredits:displayTokens(TRIAL_CREDITS)
+      googleEnabled:googleEnabled(), googleSignupEnabled:googleEnabled()&&process.env.GOOGLE_SIGNUP_ENABLED==="1",
+      guestEnabled:GUEST_ENABLED, trialCredits:displayTokens(TRIAL_CREDITS)
     });
   }
   if (GUEST_ENABLED && (p === "/chat/api/guest" || p === "/chat/api/guest/chat")) {
@@ -718,31 +739,37 @@ const server=http.createServer(async(req,res)=>{
         origin:ORIGIN,key:KEY,
         remember:link?linkedSession?.remember===true:url.searchParams.get("remember")==="1",
         linkUserId:user?.id||null,linkSessionHash:user?tokenHash(raw):null,
-        referralCode,referralSource:safeSource(url.searchParams.get("src"))
+        referralCode,referralSource:safeSource(url.searchParams.get("src")),
+        guestHash:guestFor(req)?.hash||null
       });
       res.writeHead(302,{"location":flow.url,"set-cookie":flow.cookie,"cache-control":"no-store"});
       return res.end();
     }
     if(req.method==="GET"&&url.pathname==="/chat/auth/google/callback"){
       if(!googleEnabled())fail(503,"Вход через Google пока не подключён");
+      let stage="state";
       try{
-        const flow=verifyGoogleCookie(cookies(req).al_google_state,KEY);
+        let flow;
+        try{flow=verifyGoogleCookie(cookies(req).al_google_state,KEY);}
+        catch(e){throw new GoogleOAuthError("GOOGLE_STATE_INVALID",0,e);}
         const state=url.searchParams.get("state");
         if(!state||state.length!==flow.state.length||
            !crypto.timingSafeEqual(Buffer.from(state),Buffer.from(flow.state)))
-          throw Error("OAuth state mismatch");
-        if(url.searchParams.has("error"))throw Error("Google authentication declined");
+          throw new GoogleOAuthError("GOOGLE_STATE_INVALID");
+        if(url.searchParams.has("error"))throw new GoogleOAuthError("GOOGLE_CANCELLED");
+        stage="exchange";
         const identity=await googleIdentity(url.searchParams.get("code"),flow,ORIGIN);
+        stage="account";
         let user, registered=false;
         if(flow.linkUserId){
           const validSession=store.db.sessions.some(x=>x.userId===flow.linkUserId&&
             x.hash===flow.linkSessionHash&&x.expiresAt>Date.now());
-          if(!validSession)throw Error("Link session expired");
+          if(!validSession)throw new GoogleOAuthError("GOOGLE_STATE_INVALID");
           user=store.db.users.find(x=>x.id===flow.linkUserId);
           if(!user||user.email!==identity.email||user.googleSub&&user.googleSub!==identity.sub)
-            throw Error("Google linking email mismatch");
+            throw new GoogleOAuthError("GOOGLE_LINK_MISMATCH");
           if(store.db.users.some(x=>x.googleSub===identity.sub&&x.id!==user.id))
-            throw Error("Google identity already linked");
+            throw new GoogleOAuthError("GOOGLE_LINK_MISMATCH");
           user.googleSub=identity.sub;user.emailVerified=true;store.save();
         }else{
           user=store.db.users.find(x=>x.googleSub===identity.sub);
@@ -752,15 +779,21 @@ const server=http.createServer(async(req,res)=>{
                 "set-cookie":clearGoogleCookie(ORIGIN.startsWith("https:"))});
               return res.end();
             }
-            if(process.env.GOOGLE_SIGNUP_ENABLED!=="1")throw Error("New Google registration not enabled");
+            if(process.env.GOOGLE_SIGNUP_ENABLED!=="1")
+              throw new GoogleOAuthError("GOOGLE_SIGNUP_DISABLED");
             ensureGuestIdle(req);
+            reserveGoogleSignup(req);
             const grant=allocateVerifiedRegistration(store.db,flow.referralCode);
             user={id:randomId(),email:identity.email,pass:null,googleSub:identity.sub,
               emailVerified:true,createdAt:now(),credits:grant.credits,
               accountType:"trial",referralCode:grant.referralCode,
               referralSource:flow.referralSource||null};
-            store.db.users.push(user);saveGuestConversation(req,user);store.save();
+            store.db.users.push(user);saveGuestConversation(req,user,flow.guestHash);store.save();
             registered=true;
+          } else {
+            // Existing Google account: migrate the still-unclaimed guest chat too.
+            ensureGuestIdle(req);
+            if(saveGuestConversation(req,user,flow.guestHash))store.save();
           }
         }
         newSession(user,res,flow.remember);
@@ -769,8 +802,15 @@ const server=http.createServer(async(req,res)=>{
         const notice=flow.linkUserId?"?auth_notice=google_linked":registered?"?auth_notice=google_registered":"";
         res.writeHead(303,{"location":ORIGIN+"/chat/"+notice});
         return res.end();
-      }catch{
-        res.writeHead(303,{"location":ORIGIN+"/chat/?auth_error=google_login_failed",
+      }catch(e){
+        const reason=googleOAuthFailure(e);
+        // Explicit phase and sanitized network code only. Never log email,
+        // auth code, cookies, access/id tokens, secrets or request body.
+        const technical=String(e?.cause?.cause?.code||e?.cause?.code||"").slice(0,40);
+        console.error("google_oauth_failed",stage,reason,
+          Number.isInteger(e?.status)?e.status:0,
+          /^[A-Z_]{2,40}$/.test(technical)?technical:"");
+        res.writeHead(303,{"location":ORIGIN+"/chat/?auth_error="+reason,
           "set-cookie":clearGoogleCookie(ORIGIN.startsWith("https:"))});
         return res.end();
       }
