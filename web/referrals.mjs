@@ -17,9 +17,11 @@ export const GUEST_PUBLIC_TOKENS=20000; // One shared welcome budget.
 export const GUEST_CONSULT_COST=1500; // Ten consultations cost 15,000 total.
 export const GUEST_DOCUMENT_COST=5000; // One document costs 5,000 total.
 export const PACKAGES=Object.freeze([
-  Object.freeze({id:"start",tokens:100000,priceKzt:19900}),
-  Object.freeze({id:"plus",tokens:500000,priceKzt:94900}),
-  Object.freeze({id:"pro",tokens:1000000,priceKzt:179900})
+  Object.freeze({id:"try",name:"Пробный",tokens:10000,priceKzt:990}),
+  Object.freeze({id:"start",name:"Старт",tokens:25000,priceKzt:1990}),
+  Object.freeze({id:"plus",name:"Плюс",tokens:45000,priceKzt:2990}),
+  Object.freeze({id:"work",name:"Практика",tokens:90000,priceKzt:4990}),
+  Object.freeze({id:"pro",name:"Профессиональный",tokens:200000,priceKzt:9990})
 ]);
 export const MODE_COSTS=Object.freeze({
   consult:15,audit:80,strategy:120,draft:50,review:120,compact:30
