@@ -8,7 +8,8 @@ import { exportDocx, exportPdf } from "./export.mjs";
 import {
   REFERRAL_BONUS,TRIAL_CREDITS,aiTokenCost,normalizeReferral,safeSource,
   campaignByCode,createCampaign,registrationCredit,allocateVerifiedRegistration,
-  balanceOf,canSpend,spendCredits,adminAuthorized,displayTokens,PUBLIC_TOKEN_MULTIPLIER
+  balanceOf,canSpend,spendCredits,adminAuthorized,displayTokens,PUBLIC_TOKEN_MULTIPLIER,
+  GUEST_PUBLIC_TOKENS,GUEST_CONSULT_COST,GUEST_DOCUMENT_COST,PACKAGES,remainingGuestTokens
 } from "./referrals.mjs";
 import {
   googleEnabled, mailEnabled, googleStart, googleIdentity, verifyGoogleCookie, clearGoogleCookie,
@@ -29,12 +30,13 @@ const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
+const FREE_MODEL = process.env.FREE_TIER_OPENAI_MODEL || "gpt-6.1-sol";
 const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
-const DAILY_LIMIT = Math.max(1, Number(process.env.MAX_MESSAGES_PER_DAY || 25));
+// Legacy MAX_MESSAGES_PER_DAY is in stored credits (100 public tokens each).
+const DAILY_LIMIT = Math.max(200, Number(process.env.MAX_MESSAGES_PER_DAY || 200));
 const MAX_USER_DOCS_PER_CHAT = 3;
 const GUEST_LIMIT = 10;
 const GUEST_REMINDER = 5;
-const GUEST_DOCUMENT_BONUS = 600; // One draft, separate from ten consultations.
 const GUEST_MAX_AGE = 90 * 86400;
 const GUEST_ENABLED = process.env.GUEST_CHAT_ENABLED !== "0";
 // Conservative pilot caps: model calls are reserved BEFORE calling OpenAI.
@@ -174,23 +176,18 @@ function guestFor(req) {
   return (store.db.guests || []).find(g => g.hash === hash && g.expiresAt > Date.now()) || null;
 }
 function guestStatus(guest,req) {
-  const used = Math.min(GUEST_LIMIT,guest?.used || 0), quota = guestQuota(req);
-  const draftUsed = guest?.draftUsed === true;
-  const cookieRemaining = Math.max(0,GUEST_LIMIT-used);
-  const remaining = Math.min(cookieRemaining,quota.remaining);
-  const documentRemaining = draftUsed || quota.remaining===0 ? 0 : 1;
-  return { used, remaining, limit:GUEST_LIMIT,
-    // 1,000 consultation tokens and a separate 600-token one-document bonus.
-    // Safety attempts never debit token balances, even if a provider fails.
-    tokenLimit:GUEST_LIMIT*PUBLIC_TOKEN_MULTIPLIER+GUEST_DOCUMENT_BONUS,
-    tokensUsed:used*PUBLIC_TOKEN_MULTIPLIER+(draftUsed?GUEST_DOCUMENT_BONUS:0),
-    tokenBalance:cookieRemaining*PUBLIC_TOKEN_MULTIPLIER+(draftUsed?0:GUEST_DOCUMENT_BONUS),
-    tokenCost:PUBLIC_TOKEN_MULTIPLIER,
-    documentTokenCost:GUEST_DOCUMENT_BONUS,
-    documentRemaining,
+  const used=Math.min(GUEST_LIMIT,guest?.used||0),quota=guestQuota(req);
+  const balance=remainingGuestTokens(guest);
+  const remaining=Math.min(Math.max(0,GUEST_LIMIT-used),
+    Math.floor(balance/GUEST_CONSULT_COST),quota.remaining);
+  const documentRemaining=guest?.draftUsed===true||balance<GUEST_DOCUMENT_COST||!quota.remaining?0:1;
+  return {used,remaining,limit:GUEST_LIMIT,
+    tokenLimit:GUEST_PUBLIC_TOKENS,tokensUsed:GUEST_PUBLIC_TOKENS-balance,
+    tokenBalance:balance,tokenCost:GUEST_CONSULT_COST,
+    documentTokenCost:GUEST_DOCUMENT_COST,documentRemaining,
     reminderAt:GUEST_REMINDER,
-    ...((cookieRemaining>0||!draftUsed) && quota.restriction ? {restriction:quota.restriction}:{}),
-    messages:guest?.messages.map(m=>store.publicMessage(m)) || [] };
+    ...(balance>0&&quota.restriction?{restriction:quota.restriction}:{}),
+    messages:guest?.messages.map(m=>store.publicMessage(m))||[]};
 }
 function openGuest(req,res) {
   const guest = guestFor(req);
@@ -211,21 +208,36 @@ function ensureGuestIdle(req) {
   if (guestRequests.has(guestFor(req)?.hash))
     fail(409,"Дождитесь ответа на гостевой вопрос и повторите регистрацию");
 }
-function saveGuestConversation(req,user,priorGuestHash=null) {
-  // Registration may finish in a different tab after the browser lost its
-  // guest cookie; preserve the authenticated email-start linkage server-side.
-  const linked = priorGuestHash
-    ? (store.db.guests || []).find(g=>g.hash===priorGuestHash && g.expiresAt>Date.now())
+function saveGuestConversation(req,user,priorGuestHash=null,grantRemaining=false) {
+  const linked=priorGuestHash
+    ? (store.db.guests||[]).find(g=>g.hash===priorGuestHash&&g.expiresAt>Date.now())
     : null;
-  const guest = linked || guestFor(req);
-  if (!guest?.messages?.length) return null;
-  if (guestRequests.has(guest.hash))
+  const guest=linked||guestFor(req);
+  if(!guest||guest.transferredTo)return null;
+  if(guestRequests.has(guest.hash))
     fail(409,"Дождитесь окончания гостевого ответа и повторите действие");
-  const id = randomId(), time = now();
-  store.db.cases.push({...GUEST_CASE,id,ownerId:user.id,createdAt:time,updatedAt:time});
-  store.db.messages.push(...guest.messages.map(m=>({...m,caseId:id})));
-  guest.messages = []; // Idempotent: subsequent login cannot attach twice.
+  // Only a new verified account receives the remaining 20k guest allowance.
+  // Existing-account logins never mint additional credits.
+  if(grantRemaining&&user.accountType==="trial"&&Number.isInteger(user.credits))
+    user.credits+=Math.floor(remainingGuestTokens(guest)/PUBLIC_TOKEN_MULTIPLIER);
+  const id=guest.messages?.length?randomId():null,time=now();
+  if(id){
+    store.db.cases.push({...GUEST_CASE,id,ownerId:user.id,createdAt:time,updatedAt:time});
+    store.db.messages.push(...guest.messages.map(m=>({...m,caseId:id})));
+  }
+  guest.messages=[];
+  guest.transferredTo=user.id;
   return id;
+}
+function grandfatherTrialBalance(user) {
+  // One-time grant to existing verified trial users; preserve older credits.
+  if(user?.accountType!=="trial"||user.freeCreditVersion===2||
+      !Number.isInteger(user.credits)||user.credits<0)return;
+  const previous=user.credits;
+  user.credits=previous+TRIAL_CREDITS;
+  user.freeCreditVersion=2;
+  try{store.save();}
+  catch(e){user.credits=previous;delete user.freeCreditVersion;throw e;}
 }
 async function guestChat(req,res) {
   const body = await bodyJson(req);
