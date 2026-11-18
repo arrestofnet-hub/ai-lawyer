@@ -80,8 +80,8 @@ async function downloadExport(caseId,messageId,format,button) {
 const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(),
   busy:false, registered:false, awaitingCode:false, signupMode:"invite",
   legacyInviteVisible:false, googleEnabled:false, googleSignupEnabled:false, dailyLimit:0,balance:null,
-  pendingRequest:null,
-  prices:{consult:100,audit:600,strategy:800,draft:600,review:800,compact:200}
+  pendingRequest:null,packages:[],
+  prices:{consult:1500,audit:8000,strategy:12000,draft:5000,review:12000,compact:3000}
 };
 const incomingParams=new URLSearchParams(location.search);
 const referralFromLink=(incomingParams.get("ref")||"").trim().toUpperCase().slice(0,20);
@@ -113,10 +113,26 @@ async function request(route, options={}) {
   const res=await fetch(API+route,{credentials:"same-origin",cache:"no-store",...options,
     headers:{...(options.body && !(options.body instanceof Blob) ? {"content-type":"application/json"} : {}),...(options.headers||{})}});
   const data=await res.json().catch(()=>({error:"Некорректный ответ сервера"}));
-  if(!res.ok) throw Object.assign(new Error(data.error||"Ошибка сервера"),{guest:data.guest});
+  if(!res.ok) throw Object.assign(new Error(data.error||"Ошибка сервера"),{guest:data.guest,status:res.status});
   return data;
 }
 const post=(route,body)=>request(route,{method:"POST",body:JSON.stringify(body)});
+const formatCount=value=>Number(value).toLocaleString("ru-RU");
+function renderPackages() {
+  const root=$("#packageOffers");
+  root.replaceChildren();
+  for(const [i,pkg] of state.packages.entries()){
+    const article=document.createElement("article");
+    article.className="plan-card";
+    const heading=document.createElement("h3");heading.textContent=["Старт","Плюс","Профессиональный"][i]||"Пакет";
+    const price=document.createElement("strong");price.textContent=formatCount(pkg.priceKzt)+" ₸";
+    const details=document.createElement("p");details.textContent=formatCount(pkg.tokens)+" токенов AI Lawyer";
+    const buy=document.createElement("button");buy.type="button";buy.disabled=true;
+    buy.className="secondary";buy.textContent="Оплата подключается";
+    article.append(heading,price,details,buy);root.append(article);
+  }
+}
+function showPlans() { if(!$("#plans").open)$("#plans").showModal(); }
 function setAppVisible(visible) {
   $("#app").style.display=visible?"grid":"none";
 }
@@ -149,8 +165,9 @@ function openAuth(register,{reminder=false}={}) {
   $("#guestAuthNote").hidden=!guest;
   $("#guestAuthNote").textContent=guest?.restriction
     || (guestHasAccess(guest)
-      ? "У вас "+guest.tokenBalance+" из 1 600 бесплатных токенов: до 10 консультаций по 100 и один документ за 600. Остаток на документ: "+(guest.documentRemaining?600:0)+"."
-      : "Бесплатный пакет (10 консультаций и один документ) исчерпан. Для продолжения зарегистрируйтесь или войдите.");
+      ? "Остаток: "+formatCount(guest.tokenBalance)+" из 20 000 гостевых токенов. После регистрации получите ещё 20 000, сохранив остаток."
+      : "Гостевой доступ завершён. Зарегистрируйтесь, чтобы получить ещё 20 000 токенов и сохранить неиспользованный остаток.");
+  $("#guestPricePreview").hidden=!guest||guestHasAccess(guest);
   $("#closeAuth").hidden=!guest||!guestHasAccess(guest);
   if(!dialog.open)dialog.showModal();
 }
@@ -161,15 +178,15 @@ function updateGuest(guest) {
     if(guest.remaining>0)state.mode="consult";
     else if(guest.documentRemaining>0)state.mode="draft";
   }
-  $("#daily").textContent="Бесплатные токены: "+guest.tokenBalance+" / "+guest.tokenLimit+
-    " · 10 консультаций + 1 документ"+(guest.restriction?" · "+guest.restriction:"");
+  $("#daily").textContent="Бесплатные токены: "+formatCount(guest.tokenBalance)+" / "+formatCount(guest.tokenLimit)+
+    " · до 10 консультаций и 1 документа"+(guest.restriction?" · "+guest.restriction:"");
   $("#guestWelcome").hidden=guest.messages.length>0;
   $("#messages").hidden=!guest.messages.length;
   $("#send").disabled=state.busy||!guestCanSend(guest);
   $("#messageInput").disabled=!guestCanSend(guest);
   $("#modeHint").textContent=state.mode==="draft"
-    ? "Документ · 600 бонусных токенов, один документ бесплатно. После ответа доступны Word и PDF."
-    : "Консультация · 100 токенов за успешный ответ. На один документ отдельно выделены 600 токенов.";
+    ? "Документ · "+formatCount(guest.documentTokenCost)+" токенов. После ответа доступны Word и PDF."
+    : "Консультация · "+formatCount(guest.tokenCost)+" токенов. Один документ стоит "+formatCount(guest.documentTokenCost)+".";
   syncGuestModeButtons(guest);
   renderMessages();
 }
@@ -247,8 +264,8 @@ function validatePasswordMatch(showErrors=true){
   return !mismatch&&(!relevant||first===repeated);
 }
 function currentPrice(){
-  if(state.mode==="consult"&&state.docIds.size)return Math.max(300,state.docIds.size*300);
-  return state.prices[state.mode]||100;
+  if(state.mode==="consult"&&state.docIds.size)return 4500+Math.max(0,state.docIds.size-1)*1500;
+  return state.prices[state.mode]||1500;
 }
 function updateModeHint(){
   const cost=currentPrice();
@@ -310,10 +327,11 @@ async function boot() {
         ? "Через Google можно войти или создать новый аккаунт."
         : "Вход Google доступен для привязанных аккаунтов. Новые аккаунты пока создаются через email.";
     state.prices=s.prices||state.prices;
+    state.packages=Array.isArray(s.packages)?s.packages:[];
+    renderPackages();
     state.balance=s.balance??null;
-    $("#freePlanDetails").textContent=s.trialCredits==null
-      ? "1 600 токенов: 10 гостевых консультаций (1 000) и один документ (600)."
-      : "1 600 токенов: 10 гостевых консультаций (1 000) и один документ (600). После регистрации — "+s.trialCredits+" стартовых токенов.";
+    $("#freePlanDetails").textContent="20 000 гостевых токенов + "+formatCount(s.trialCredits||20000)+
+      " после подтверждённой регистрации. Неиспользованный гостевой остаток сохраняется.";
     updateAuthUi();
     if(!s.authenticated) {
       const oauthError=new URLSearchParams(location.search).has("auth_error");
@@ -352,8 +370,8 @@ async function loadCases(preferredId) {
   const data=await request("/cases");state.cases=data.cases;
   state.balance=data.balance??null;
   state.prices=data.prices||state.prices;
-  $("#daily").textContent="Токены сегодня: "+data.usedToday+" / "+state.dailyLimit+
-    (state.balance===null?"":" · Баланс: "+state.balance);
+  $("#daily").textContent="Токены сегодня: "+formatCount(data.usedToday)+" / "+formatCount(state.dailyLimit)+
+    (state.balance===null?"":" · Баланс: "+formatCount(state.balance));
   updateModeHint();
   renderCaseList();
   const target=preferredId||state.current?.case.id||data.cases[0]?.id;
@@ -506,11 +524,11 @@ function showPasswordRecovery(show){
 }
 $("#closeAuth").addEventListener("click",()=>$("#authScreen").close());
 $("#authScreen").addEventListener("cancel",ev=>{
-  if(!state.guest?.remaining)ev.preventDefault();
+  if(state.guest&&!guestHasAccess(state.guest))ev.preventDefault();
 });
 $("#guestLogin").addEventListener("click",()=>openAuth(false));
 $("#guestRegister").addEventListener("click",()=>openAuth(true));
-$("#openPlans").addEventListener("click",()=>$("#plans").showModal());
+$("#openPlans").addEventListener("click",showPlans);
 $("#closePlans").addEventListener("click",()=>$("#plans").close());
 $("#continueFree").addEventListener("click",()=>$("#plans").close());
 $("#forgotPassword").addEventListener("click",()=>showPasswordRecovery(true));
@@ -637,7 +655,7 @@ $("#authForm").addEventListener("submit",async ev=>{
       notice.textContent="Гостевая переписка сохранена в вашем личном деле.";
       notice.style.color="#16683e";
     }
-    if(completedRegistration&&state.user)$("#plans").showModal();
+    if(completedRegistration&&state.user)showPlans();
   } catch(e) {showError(e.message,"#authError");}
   finally {submit.disabled=false;}
 });
@@ -756,6 +774,10 @@ $("#messageForm").addEventListener("submit",async ev=>{
           if(!guestHasAccess(latest))openAuth(true,{reminder:true});
         }
       }catch{showError(e.message+" Проверьте историю перед повторной отправкой.");}
+    }else if(e.status===402){
+      await loadCases(id).catch(()=>{});
+      showError("Недостаточно токенов для операции. Доступные пакеты показаны в тарифах; оплата пока подключается.");
+      showPlans();
     }else{
       try{
         const latest=await request("/cases/"+id);
