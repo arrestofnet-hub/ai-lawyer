@@ -168,7 +168,9 @@ function openAuth(register,{reminder=false}={}) {
       ? "Остаток: "+formatCount(guest.tokenBalance)+" из 20 000 гостевых токенов. После регистрации получите ещё 20 000, сохранив остаток."
       : "Гостевой доступ завершён. Зарегистрируйтесь, чтобы получить ещё 20 000 токенов и сохранить неиспользованный остаток.");
   $("#guestPricePreview").hidden=!guest||guestHasAccess(guest);
-  $("#closeAuth").hidden=!guest||!guestHasAccess(guest);
+  // Even when credits are exhausted, a guest must be able to close the
+  // upsell and download a document already generated in the conversation.
+  $("#closeAuth").hidden=!guest||(!guestHasAccess(guest)&&!guest.messages?.length);
   if(!dialog.open)dialog.showModal();
 }
 function updateGuest(guest) {
@@ -524,7 +526,7 @@ function showPasswordRecovery(show){
 }
 $("#closeAuth").addEventListener("click",()=>$("#authScreen").close());
 $("#authScreen").addEventListener("cancel",ev=>{
-  if(state.guest&&!guestHasAccess(state.guest))ev.preventDefault();
+  if(state.guest&&!guestHasAccess(state.guest)&&!state.guest.messages?.length)ev.preventDefault();
 });
 $("#guestLogin").addEventListener("click",()=>openAuth(false));
 $("#guestRegister").addEventListener("click",()=>openAuth(true));
