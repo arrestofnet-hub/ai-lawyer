@@ -22,6 +22,7 @@ import {
   randomId, classifyFile, extractOutput, buildMessages, strategyInstruction,
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
+import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -347,7 +348,8 @@ async function askModel(payload) {
 function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs, { ...caseData, mode });
   return {
-    model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" + playbooks,mode),
+    model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" +
+      selectLegalPlaybooks(playbooks,message,caseData.summary),mode),
     reasoning:{ effort:"medium" }, max_output_tokens:creditAccount?(mode==="consult"?2400:4000):6500,
     ...(SEARCH_ENABLED ? { tools:[{ type:"web_search", search_context_size:"medium", filters:{ allowed_domains:["adilet.zan.kz","zan.gov.kz","gov.kz","sud.gov.kz","egov.kz"] } }] } : {}),
     input,
