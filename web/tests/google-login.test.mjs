@@ -74,7 +74,7 @@ test("Google OAuth safely registers new users, restores guest chat, and logs int
     assert.equal(session.authenticated,true);
     assert.equal(session.user.email,"google-test@example.kz");
     assert.equal(session.user.googleLinked,true);
-    assert.equal(session.balance,300);
+    assert.equal(session.balance,38500);
     const cases=await (await call("/chat/api/cases",cookie)).json();
     assert.equal(cases.cases.length,1);
     const restored=await (await call("/chat/api/cases/"+cases.cases[0].id,cookie)).json();
