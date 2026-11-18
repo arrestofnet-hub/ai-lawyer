@@ -16,6 +16,7 @@ test("failed AI calls do not debit public tokens, and retries are idempotent",as
     globalThis.fetch=async (url,options)=>{
       if(url!=="https://api.openai.com/v1/responses") throw Error("Unexpected request");
       const payload=JSON.parse(options.body);
+      if(payload.model!=="gpt-6.1-sol")return Response.json({error:{code:"wrong_model"}},{status:400});
       const message=payload.input.at(-1).content[0].text;
       if(message==="FAIL")return Response.json({error:{code:"provider_503"}},{status:503});
       if(message==="EMPTY")return Response.json({output:[]});
@@ -25,7 +26,9 @@ test("failed AI calls do not debit public tokens, and retries are idempotent",as
   const key=crypto.randomBytes(32).toString("hex");
   const server=fileURLToPath(new URL("../server.mjs",import.meta.url));
   const env={PORT:"0",HOST:"127.0.0.1",DATA_DIR:temp,DATA_KEY:key,
-    OPENAI_API_KEY:"test-provider",ENABLE_LAW_SEARCH:"0",SIGNUP_INVITE_CODE:"invite-test"};
+    OPENAI_API_KEY:"test-provider",ENABLE_LAW_SEARCH:"0",
+    // Simulate a legacy VPS variable that must no longer force Astra billing.
+    OPENAI_MODEL:"gpt-6-astra",SIGNUP_INVITE_CODE:"invite-test"};
   let child,base;
   async function start(){
     child=spawn(process.execPath,["--import",provider,server],{env,stdio:["ignore","pipe","inherit"]});
