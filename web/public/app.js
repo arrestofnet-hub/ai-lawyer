@@ -502,6 +502,129 @@ function renderSummary() {
     }catch(e){showError(e.message);}finally{state.busy=false;refresh.disabled=false;refresh.textContent="Обновить карточку дела";}
   });
   panel.append(refresh);
+  const area=document.createElement("section");
+  area.className="dossier-section";
+  panel.append(area);
+  const caseId=state.current?.case.id;
+  if(caseId)renderDossierArea(caseId,area).catch(e=>showError(e.message));
+}
+async function renderDossierArea(caseId,area){
+  const info=await request("/cases/"+caseId+"/dossier");
+  if(state.current?.case.id!==caseId||!area.isConnected)return;
+  area.replaceChildren();
+  const d=info.dossier;
+  const heading=document.createElement("h3");
+  heading.textContent="Факты, доказательства и контроль сроков";area.append(heading);
+  function line(text,cls=""){
+    const p=document.createElement("p");p.textContent=text;p.className=cls;area.append(p);return p;
+  }
+  line("Сохраняется отдельно по этому делу. Даты и суммы ниже получены из слов клиента, а не признаны установленными фактами.","muted");
+  line("Редакция карточки: "+d.revision+(d.updatedAt?" · "+new Date(d.updatedAt).toLocaleString("ru-RU"):""),"muted");
+  const sourceById=new Map(info.sources.map(x=>[x.id,x]));
+  if(d.facts.length){
+    const h=document.createElement("h4");h.textContent="Реестр обстоятельств";area.append(h);
+    for(const fact of d.facts){
+      const block=document.createElement("div");block.className="dossier-record";
+      const label=document.createElement("b");
+      const labels={claimed:"Заявлено",supported:"Есть указанный источник (не проверен)",disputed:"Оспаривается",unknown:"Не установлено"};
+      label.textContent=(labels[fact.status]||fact.status)+": "+fact.statement;
+      block.append(label);
+      if(fact.eventDate){const t=document.createElement("div");t.textContent="Дата: "+fact.eventDate;block.append(t);}
+      if(fact.sourceIds.length){
+        const t=document.createElement("div");t.textContent="Источник: "+fact.sourceIds.map(id=>sourceById.get(id)?.title||id).join("; ");
+        block.append(t);
+      }
+      if(fact.note){const t=document.createElement("div");t.textContent=fact.note;block.append(t);}
+      const remove=document.createElement("button");remove.type="button";remove.className="linkbutton";remove.textContent="Исключить из реестра";
+      remove.addEventListener("click",async()=>{
+        if(!confirm("Исключить обстоятельство из текущей карточки? Предыдущая версия сохранится."))return;
+        try{
+          remove.disabled=true;
+          await request("/cases/"+caseId+"/dossier",{method:"PATCH",
+            body:JSON.stringify({...d,facts:d.facts.filter(x=>x.id!==fact.id)})});
+          if(state.current?.case.id===caseId)renderSummary();
+        }catch(e){showError(e.message);remove.disabled=false;}
+      });
+      block.append(remove);area.append(block);
+    }
+  }
+  const dateEntries=info.chronology.slice(0,8);
+  if(dateEntries.length){
+    const h=document.createElement("h4");h.textContent="Даты, обнаруженные в сообщениях";area.append(h);
+    for(const x of dateEntries)line(x.date+" — "+x.quote,"dossier-excerpt");
+  }
+  const amountEntries=info.amounts.slice(0,8);
+  if(amountEntries.length){
+    const h=document.createElement("h4");h.textContent="Упомянутые суммы (не сверены)";area.append(h);
+    for(const x of amountEntries)line(x.amount+" — "+x.quote,"dossier-excerpt");
+  }
+  const add=document.createElement("button");add.type="button";add.className="secondary";
+  add.textContent="+ Записать обстоятельство";area.append(add);
+  const form=document.createElement("form");form.className="dossier-edit";form.hidden=true;
+  const statement=document.createElement("textarea");statement.placeholder="Факт или позиция стороны";statement.maxLength=1500;statement.required=true;statement.rows=2;
+  const category=document.createElement("select");
+  for(const [v,t] of [["fact","Обстоятельство"],["contract","Договор"],["payment","Платёж"],["notice","Уведомление"],["procedure","Процессуальное действие"],["deadline","Срок"],["other","Другое"]]){
+    const o=document.createElement("option");o.value=v;o.textContent=t;category.append(o);
+  }
+  const status=document.createElement("select");
+  for(const [v,t] of [["claimed","Заявлено"],["supported","Есть источник (нужна проверка)"],["disputed","Оспаривается"],["unknown","Не установлено"]]){
+    const o=document.createElement("option");o.value=v;o.textContent=t;status.append(o);
+  }
+  const source=document.createElement("select");
+  const none=document.createElement("option");none.value="";none.textContent="Источник не указан";source.append(none);
+  for(const x of info.sources){
+    const o=document.createElement("option");o.value=x.id;o.textContent=x.title.slice(0,90);source.append(o);
+  }
+  const date=document.createElement("input");date.type="date";date.title="Дата события (необязательно)";
+  const note=document.createElement("input");note.placeholder="Проверка, пункт документа, замечание";note.maxLength=800;
+  const save=document.createElement("button");save.className="secondary";save.type="submit";save.textContent="Сохранить факт";
+  form.append(statement,category,status,source,date,note,save);area.append(form);
+  add.addEventListener("click",()=>{form.hidden=!form.hidden;if(!form.hidden)statement.focus();});
+  form.addEventListener("submit",async ev=>{
+    ev.preventDefault();
+    save.disabled=true;
+    try{
+      if(status.value==="supported"&&!source.value)throw Error("Для подтверждения укажите источник из дела");
+      const fact={statement:statement.value,category:category.value,status:status.value,
+        sourceIds:source.value?[source.value]:[],eventDate:date.value||null,note:note.value};
+      await request("/cases/"+caseId+"/dossier",{method:"PATCH",
+        body:JSON.stringify({...d,facts:[...d.facts,fact]})});
+      if(state.current?.case.id===caseId)renderSummary();
+    }catch(e){showError(e.message);save.disabled=false;}
+  });
+  const h=document.createElement("h4");h.textContent="Действия и контроль дат";area.append(h);
+  for(const task of d.tasks){
+    const b=document.createElement("div");b.className="dossier-record";
+    const label=document.createElement("span");label.textContent=(task.state==="done"?"Выполнено: ":"В работе: ")+task.title+
+      (task.dueDate?" · "+task.dueDate:"");b.append(label);
+    if(task.state!=="done"){
+      const done=document.createElement("button");done.className="linkbutton";done.textContent="Отметить выполненным";
+      done.addEventListener("click",async()=>{
+        try{
+          done.disabled=true;
+          await request("/cases/"+caseId+"/dossier",{method:"PATCH",
+            body:JSON.stringify({...d,tasks:d.tasks.map(t=>t.id===task.id?{...t,state:"done"}:t)})});
+          if(state.current?.case.id===caseId)renderSummary();
+        }catch(e){showError(e.message);done.disabled=false;}
+      });b.append(done);
+    }
+    area.append(b);
+  }
+  const taskForm=document.createElement("form");taskForm.className="dossier-edit";
+  const title=document.createElement("input");title.placeholder="Следующее действие (кому и что направить)";title.maxLength=320;title.required=true;
+  const due=document.createElement("input");due.type="date";due.title="Контрольная дата, если известна";
+  const taskSave=document.createElement("button");taskSave.className="secondary";taskSave.textContent="Добавить действие";taskSave.type="submit";
+  taskForm.append(title,due,taskSave);area.append(taskForm);
+  taskForm.addEventListener("submit",async ev=>{
+    ev.preventDefault();taskSave.disabled=true;
+    try{
+      await request("/cases/"+caseId+"/dossier",{method:"PATCH",
+        body:JSON.stringify({...d,tasks:[...d.tasks,
+          {title:title.value,state:"open",dueDate:due.value||null,note:""}]})});
+      if(state.current?.case.id===caseId)renderSummary();
+    }catch(e){showError(e.message);taskSave.disabled=false;}
+  });
+  line("Контрольная дата — рабочая пометка. Процессуальный срок по закону нужно проверить отдельно.","muted");
 }
 let resetStep="request";
 function showPasswordRecovery(show){
