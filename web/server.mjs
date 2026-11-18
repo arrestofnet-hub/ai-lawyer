@@ -466,8 +466,9 @@ async function api(req,res,url) {
     if (!email || !validPassword(b.password)) fail(400,"Нужны корректная почта и пароль не короче 12 символов");
     if (store.db.users.some(u=>u.email===email)) fail(409,"Адрес уже зарегистрирован");
     ensureGuestIdle(req);
-    const u={id:randomId(), email, pass:hashPassword(b.password), createdAt:now()};
-    store.db.users.push(u); const guestCaseId=saveGuestConversation(req,u);
+    const u={id:randomId(), email, pass:hashPassword(b.password), createdAt:now(),
+      credits:TRIAL_CREDITS,accountType:"trial",freeCreditVersion:2};
+    store.db.users.push(u); const guestCaseId=saveGuestConversation(req,u,null,true);
     store.save(); newSession(u,res,b.remember===true);
     return json(res,201,{user:safeUser(u),guestCaseId});
   }
