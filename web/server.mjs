@@ -275,7 +275,7 @@ async function guestChat(req,res) {
   try {
     if (!process.env.OPENAI_API_KEY) fail(503,"Серверу не задан OPENAI_API_KEY");
     reserveGuestAttempt(req);
-    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],mode,true));
+    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],mode,true,true));
     const previousMessages = guest.messages;
     const previousUsed=guest.used,previousDraft=guest.draftUsed;
     guest.messages = [...previousMessages,
@@ -325,10 +325,10 @@ async function askModel(payload) {
   if (!parsed.text) fail(502,"Модель не вернула текстового ответа");
   return { ...parsed, usage:data.usage || null };
 }
-function baseRequest(caseData, history, message, docs, mode, creditAccount=false) {
+function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs, { ...caseData, mode });
   return {
-    model:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" + playbooks,mode),
+    model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" + playbooks,mode),
     reasoning:{ effort:"medium" }, max_output_tokens:creditAccount?(mode==="consult"?2400:4000):6500,
     ...(SEARCH_ENABLED ? { tools:[{ type:"web_search", search_context_size:"medium", filters:{ allowed_domains:["adilet.zan.kz","zan.gov.kz","gov.kz","sud.gov.kz","egov.kz"] } }] } : {}),
     input,
@@ -661,12 +661,12 @@ async function api(req,res,url) {
     activeModelRequests.add(u.id);
     try {
     const history=store.db.messages.filter(m=>m.caseId===id);
-    const first=await askModel(baseRequest(c,history,message,docs,mode,balanceOf(u)!==null));
+    const first=await askModel(baseRequest(c,history,message,docs,mode,balanceOf(u)!==null,u.accountType==="trial"));
     let result=first;
     if (["strategy","review"].includes(mode) && process.env.SECOND_PASS_ENABLED!=="0") {
       // An actual separate skeptical review, not a claim that one was conducted.
       const critique = await askModel({
-        model:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?3000:4500,reasoning:{effort:"medium"},
+        model:u.accountType==="trial"?FREE_MODEL:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?3000:4500,reasoning:{effort:"medium"},
         instructions:"Ты независимый юридический ревизор Республики Казахстан. Найди фактические, доказательственные, процессуальные и нормативные ошибки. Не придумывай нормы и не подтверждай их без источников. Дай ИСПРАВЛЕННУЮ окончательную позицию, сохрани сильные аргументы, укажи степень достоверности.",
         input:`Задача клиента: ${message}\nКарточка дела: ${c.title} / ${c.objective}; контекст: ${(c.summary||"").slice(0,7000)}\nПервоначальный ответ: ${first.text}\nСделай независимую проверку и напиши итоговый ответ.`,
       });
@@ -692,7 +692,7 @@ async function api(req,res,url) {
     activeModelRequests.add(u.id);
     try {
     const digest=await askModel({
-      model:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?2400:3600,
+      model:u.accountType==="trial"?FREE_MODEL:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?2400:3600,
       instructions:"Создай обновлённую структурированную, нейтральную карточку юридического дела на русском. Не выдумывай факты. Сохрани старые версии и противоречия, укажи источники если даны. Структура: ЦЕЛЬ; СТОРОНЫ; ДОКУМЕНТЫ; ХРОНОЛОГИЯ; ДОКАЗАННЫЕ ФАКТЫ; УТВЕРЖДЕНИЯ; ГИПОТЕЗЫ; ПРОТИВОРЕЧИЯ; НЕХВАТКА ДОКАЗАТЕЛЬСТВ; СРОКИ; ПРОЦЕССУАЛЬНЫЕ ВАРИАНТЫ; РИСКИ; СЛЕДУЮЩИЙ ШАГ. Никогда не выдавай гипотезу за факт.",
       input:`Название: ${c.title}\nЦель: ${c.objective}\nПрежняя карточка:\n${c.summary}\nИстория:\n${messages.map(m=>m.role+": "+m.text).join("\n\n").slice(-85000)}`,
     });
