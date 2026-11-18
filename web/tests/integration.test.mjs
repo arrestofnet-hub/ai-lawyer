@@ -83,9 +83,9 @@ test("isolated accounts, sessions, documents and API failures",async()=>{
     const a=await make("a@example.kz"), b=await make("b@example.kz");
     const legacySession=await fetch(base+"/chat/api/session",{headers:{cookie:a}});
     const legacy=await legacySession.json();
-    assert.equal(legacy.balance,null,"existing invite accounts preserve legacy limit");
-    assert.equal(legacy.dailyLimit,2500);
-    assert.equal(legacy.prices.consult,100);
+    assert.equal(legacy.balance,20000,"new invited test accounts receive free grant");
+    assert.equal(legacy.dailyLimit,20000);
+    assert.equal(legacy.prices.consult,1500);
     const blockedEmail=await fetch(base+"/chat/api/auth/email-start",{
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({email:"unverified@example.kz",password:"valid-password-123",referralCode:campaign.campaign.code})
