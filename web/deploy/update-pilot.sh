@@ -66,7 +66,10 @@ check_response() {
     curl -fsS --retry 5 --retry-delay 1 --retry-connrefused --max-time 10 \
       "$url" -o "$CHECK_FILE" || return 1
   fi
-  grep -Fq -- "$expected" "$CHECK_FILE"
+  if ! grep -Fq -- "$expected" "$CHECK_FILE"; then
+    echo "ERROR: expected response marker missing at $STEP." >&2
+    return 1
+  fi
 }
 STEP='local server health'
 check_response 'http://127.0.0.1:8791/chat/health' '"ok":true'
