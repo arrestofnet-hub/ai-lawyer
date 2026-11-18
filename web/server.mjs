@@ -8,7 +8,8 @@ import { exportDocx, exportPdf } from "./export.mjs";
 import {
   REFERRAL_BONUS,TRIAL_CREDITS,aiTokenCost,normalizeReferral,safeSource,
   campaignByCode,createCampaign,registrationCredit,allocateVerifiedRegistration,
-  balanceOf,canSpend,spendCredits,adminAuthorized,displayTokens,PUBLIC_TOKEN_MULTIPLIER
+  balanceOf,canSpend,spendCredits,adminAuthorized,displayTokens,PUBLIC_TOKEN_MULTIPLIER,
+  GUEST_PUBLIC_TOKENS,GUEST_CONSULT_COST,GUEST_DOCUMENT_COST,PACKAGES,remainingGuestTokens
 } from "./referrals.mjs";
 import {
   googleEnabled, mailEnabled, googleStart, googleIdentity, verifyGoogleCookie, clearGoogleCookie,
@@ -20,6 +21,7 @@ import {
   validateEmail, validPassword, hashPassword, checkPassword, tokenHash, dataKey,
   randomId, classifyFile, extractOutput, buildMessages, strategyInstruction,
 } from "./core.mjs";
+import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -29,12 +31,14 @@ const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
+const FREE_MODEL = process.env.FREE_TIER_OPENAI_MODEL || "gpt-6.1-sol";
+const FREE_API_BUDGET_USD=Math.max(1,Math.min(1000,Number(process.env.FREE_API_BUDGET_USD||15)));
 const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
-const DAILY_LIMIT = Math.max(1, Number(process.env.MAX_MESSAGES_PER_DAY || 25));
+// Legacy MAX_MESSAGES_PER_DAY is in stored credits (100 public tokens each).
+const DAILY_LIMIT = Math.max(200, Number(process.env.MAX_MESSAGES_PER_DAY || 200));
 const MAX_USER_DOCS_PER_CHAT = 3;
 const GUEST_LIMIT = 10;
 const GUEST_REMINDER = 5;
-const GUEST_DOCUMENT_BONUS = 600; // One draft, separate from ten consultations.
 const GUEST_MAX_AGE = 90 * 86400;
 const GUEST_ENABLED = process.env.GUEST_CHAT_ENABLED !== "0";
 // Conservative pilot caps: model calls are reserved BEFORE calling OpenAI.
@@ -92,7 +96,9 @@ function sessionFor(req) {
   const hash = tokenHash(raw);
   const s = store.db.sessions.find(x => x.hash === hash && x.expiresAt > Date.now());
   if (!s) return null;
-  return store.db.users.find(x => x.id === s.userId) || null;
+  const user=store.db.users.find(x => x.id === s.userId) || null;
+  if(user)grandfatherTrialBalance(user);
+  return user;
 }
 function requireUser(req) { const u = sessionFor(req); if (!u) fail(401,"Требуется вход"); return u; }
 function sessionCookie(token, maxAge) {
@@ -142,6 +148,15 @@ function guestQuota(req, at=Date.now()) {
     : null;
   return { identity, remaining, restriction };
 }
+function enforceFreeApiBudget() {
+  if(sumEstimatedProviderCost(store.db.providerUsage,true)>=FREE_API_BUDGET_USD)
+    fail(503,"Бесплатный бюджет AI временно исчерпан. Токены не списаны. Обратитесь в поддержку.");
+}
+function recordProviderUsage(result,user,free) {
+  const quote=estimateProviderCost(result.model,result.usage,result.webCalls);
+  if(!quote)return;
+  (store.db.providerUsage??=[]).push({at:now(),userId:user?.id||null,free:free===true,...quote});
+}
 function reserveGuestAttempt(req) {
   const at = Date.now(), quota = guestQuota(req,at);
   if (!quota.remaining) fail(429,quota.restriction || "Бесплатный лимит исчерпан");
@@ -174,23 +189,18 @@ function guestFor(req) {
   return (store.db.guests || []).find(g => g.hash === hash && g.expiresAt > Date.now()) || null;
 }
 function guestStatus(guest,req) {
-  const used = Math.min(GUEST_LIMIT,guest?.used || 0), quota = guestQuota(req);
-  const draftUsed = guest?.draftUsed === true;
-  const cookieRemaining = Math.max(0,GUEST_LIMIT-used);
-  const remaining = Math.min(cookieRemaining,quota.remaining);
-  const documentRemaining = draftUsed || quota.remaining===0 ? 0 : 1;
-  return { used, remaining, limit:GUEST_LIMIT,
-    // 1,000 consultation tokens and a separate 600-token one-document bonus.
-    // Safety attempts never debit token balances, even if a provider fails.
-    tokenLimit:GUEST_LIMIT*PUBLIC_TOKEN_MULTIPLIER+GUEST_DOCUMENT_BONUS,
-    tokensUsed:used*PUBLIC_TOKEN_MULTIPLIER+(draftUsed?GUEST_DOCUMENT_BONUS:0),
-    tokenBalance:cookieRemaining*PUBLIC_TOKEN_MULTIPLIER+(draftUsed?0:GUEST_DOCUMENT_BONUS),
-    tokenCost:PUBLIC_TOKEN_MULTIPLIER,
-    documentTokenCost:GUEST_DOCUMENT_BONUS,
-    documentRemaining,
+  const used=Math.min(GUEST_LIMIT,guest?.used||0),quota=guestQuota(req);
+  const balance=remainingGuestTokens(guest);
+  const remaining=Math.min(Math.max(0,GUEST_LIMIT-used),
+    Math.floor(balance/GUEST_CONSULT_COST),quota.remaining);
+  const documentRemaining=guest?.draftUsed===true||balance<GUEST_DOCUMENT_COST||!quota.remaining?0:1;
+  return {used,remaining,limit:GUEST_LIMIT,
+    tokenLimit:GUEST_PUBLIC_TOKENS,tokensUsed:GUEST_PUBLIC_TOKENS-balance,
+    tokenBalance:balance,tokenCost:GUEST_CONSULT_COST,
+    documentTokenCost:GUEST_DOCUMENT_COST,documentRemaining,
     reminderAt:GUEST_REMINDER,
-    ...((cookieRemaining>0||!draftUsed) && quota.restriction ? {restriction:quota.restriction}:{}),
-    messages:guest?.messages.map(m=>store.publicMessage(m)) || [] };
+    ...(quota.restriction?{restriction:quota.restriction}:{}),
+    messages:guest?.messages.map(m=>store.publicMessage(m))||[]};
 }
 function openGuest(req,res) {
   const guest = guestFor(req);
@@ -211,21 +221,36 @@ function ensureGuestIdle(req) {
   if (guestRequests.has(guestFor(req)?.hash))
     fail(409,"Дождитесь ответа на гостевой вопрос и повторите регистрацию");
 }
-function saveGuestConversation(req,user,priorGuestHash=null) {
-  // Registration may finish in a different tab after the browser lost its
-  // guest cookie; preserve the authenticated email-start linkage server-side.
-  const linked = priorGuestHash
-    ? (store.db.guests || []).find(g=>g.hash===priorGuestHash && g.expiresAt>Date.now())
+function saveGuestConversation(req,user,priorGuestHash=null,grantRemaining=false) {
+  const linked=priorGuestHash
+    ? (store.db.guests||[]).find(g=>g.hash===priorGuestHash&&g.expiresAt>Date.now())
     : null;
-  const guest = linked || guestFor(req);
-  if (!guest?.messages?.length) return null;
-  if (guestRequests.has(guest.hash))
+  const guest=linked||guestFor(req);
+  if(!guest||guest.transferredTo)return null;
+  if(guestRequests.has(guest.hash))
     fail(409,"Дождитесь окончания гостевого ответа и повторите действие");
-  const id = randomId(), time = now();
-  store.db.cases.push({...GUEST_CASE,id,ownerId:user.id,createdAt:time,updatedAt:time});
-  store.db.messages.push(...guest.messages.map(m=>({...m,caseId:id})));
-  guest.messages = []; // Idempotent: subsequent login cannot attach twice.
+  // Only a new verified account receives the remaining 20k guest allowance.
+  // Existing-account logins never mint additional credits.
+  if(grantRemaining&&user.accountType==="trial"&&Number.isInteger(user.credits))
+    user.credits+=Math.floor(remainingGuestTokens(guest)/PUBLIC_TOKEN_MULTIPLIER);
+  const id=guest.messages?.length?randomId():null,time=now();
+  if(id){
+    store.db.cases.push({...GUEST_CASE,id,ownerId:user.id,createdAt:time,updatedAt:time});
+    store.db.messages.push(...guest.messages.map(m=>({...m,caseId:id})));
+  }
+  guest.messages=[];
+  guest.transferredTo=user.id;
   return id;
+}
+function grandfatherTrialBalance(user) {
+  // One-time grant to existing verified trial users; preserve older credits.
+  if(user?.accountType!=="trial"||user.freeCreditVersion===2||
+      !Number.isInteger(user.credits)||user.credits<0)return;
+  const previous=user.credits;
+  user.credits=previous+TRIAL_CREDITS;
+  user.freeCreditVersion=2;
+  try{store.save();}
+  catch(e){user.credits=previous;delete user.freeCreditVersion;throw e;}
 }
 async function guestChat(req,res) {
   const body = await bodyJson(req);
@@ -260,18 +285,22 @@ async function guestChat(req,res) {
   guestRequests.add(guest.hash);
   try {
     if (!process.env.OPENAI_API_KEY) fail(503,"Серверу не задан OPENAI_API_KEY");
+    enforceFreeApiBudget();
     reserveGuestAttempt(req);
-    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],mode,true));
+    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],mode,true,true));
     const previousMessages = guest.messages;
     const previousUsed=guest.used,previousDraft=guest.draftUsed;
+    const previousCostCount=store.db.providerUsage?.length||0;
     guest.messages = [...previousMessages,
       {id:randomId(),role:"user",text:message,mode,requestId,createdAt:now()},
       {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode,requestId,createdAt:now()}];
     if(mode==="draft")guest.draftUsed=true;
     else guest.used++;
+    recordProviderUsage(result,null,true);
     try { store.save(); }
     catch (error) {
       guest.used=previousUsed;guest.draftUsed=previousDraft;guest.messages=previousMessages;
+      if(store.db.providerUsage)store.db.providerUsage.length=previousCostCount;
       throw error;
     }
     return json(res,200,guestStatus(guest,req));
@@ -309,12 +338,13 @@ async function askModel(payload) {
   }
   const parsed = extractOutput(data);
   if (!parsed.text) fail(502,"Модель не вернула текстового ответа");
-  return { ...parsed, usage:data.usage || null };
+  return { ...parsed, usage:data.usage || null,model:payload.model,
+    webCalls:Array.isArray(data.output)?data.output.filter(x=>x.type==="web_search_call").length:0 };
 }
-function baseRequest(caseData, history, message, docs, mode, creditAccount=false) {
+function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs, { ...caseData, mode });
   return {
-    model:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" + playbooks,mode),
+    model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" + playbooks,mode),
     reasoning:{ effort:"medium" }, max_output_tokens:creditAccount?(mode==="consult"?2400:4000):6500,
     ...(SEARCH_ENABLED ? { tools:[{ type:"web_search", search_context_size:"medium", filters:{ allowed_domains:["adilet.zan.kz","zan.gov.kz","gov.kz","sud.gov.kz","egov.kz"] } }] } : {}),
     input,
@@ -331,10 +361,11 @@ function charge(userId,credits=1) {
   store.db.usage = store.db.usage.filter(u => u.date >= new Date(Date.now()-14*86400000).toISOString().slice(0,10));
 }
 function verifyCreditAccess(user,cost){
-  if(countToday(user.id)+cost>DAILY_LIMIT)
+  const limit=user.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT;
+  if(countToday(user.id)+cost>limit)
     fail(429,"Дневной лимит AI-токенов исчерпан. Обновится в 00:00 UTC");
   if(!canSpend(user,cost))
-    fail(402,"Недостаточно AI-токенов. Пополнение пока недоступно");
+    fail(402,"Недостаточно AI-токенов. Выберите пакет пополнения в разделе «Тарифы». Оплата пока подключается.");
 }
 function completeCreditOperation(user,cost){
   spendCredits(user,cost);
@@ -343,7 +374,7 @@ function completeCreditOperation(user,cost){
 function snapshotBilling(user,caseData) {
   return {userCredits:user.credits,hadCredits:Object.hasOwn(user,"credits"),
     used:store.db.usage.map(x=>({...x})),
-    messageCount:store.db.messages.length,
+    messageCount:store.db.messages.length,costCount:store.db.providerUsage?.length||0,
     updatedAt:caseData.updatedAt,summary:caseData.summary};
 }
 function rollbackBilling(user,caseData,before) {
@@ -351,6 +382,7 @@ function rollbackBilling(user,caseData,before) {
   else delete user.credits;
   store.db.usage=before.used;
   store.db.messages.length=before.messageCount;
+  if(store.db.providerUsage)store.db.providerUsage.length=before.costCount;
   caseData.updatedAt=before.updatedAt;
   caseData.summary=before.summary;
 }
@@ -369,7 +401,8 @@ function commitBilledAnswer(user,caseData,cost,mutation) {
 function profile(user){
   return {balance:displayTokens(balanceOf(user)),
     dailyUsed:user?displayTokens(countToday(user.id)):0,
-    dailyLimit:displayTokens(DAILY_LIMIT),priceUnit:"токены AI Lawyer",prices:{
+    dailyLimit:displayTokens(user?.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT),
+    priceUnit:"токены AI Lawyer",prices:{
     consult:displayTokens(aiTokenCost("consult")),audit:displayTokens(aiTokenCost("audit")),
     strategy:displayTokens(aiTokenCost("strategy")),draft:displayTokens(aiTokenCost("draft")),
     review:displayTokens(aiTokenCost("review")),compact:displayTokens(aiTokenCost("compact"))
@@ -382,7 +415,8 @@ async function api(req,res,url) {
     const user = sessionFor(req);
     return json(res,200,{
       authenticated:!!user,user:user?safeUser(user):null,
-      configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(DAILY_LIMIT),
+      configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(user?.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT),
+      packages:PACKAGES,paymentsEnabled:false,
       signupMode:mailEnabled()?"email":process.env.SIGNUP_INVITE_CODE?"invite":"disabled",
       emailVerificationEnabled:mailEnabled(),referralBonus:displayTokens(REFERRAL_BONUS),
       prices:profile(user).prices,
@@ -432,8 +466,9 @@ async function api(req,res,url) {
     if (!email || !validPassword(b.password)) fail(400,"Нужны корректная почта и пароль не короче 12 символов");
     if (store.db.users.some(u=>u.email===email)) fail(409,"Адрес уже зарегистрирован");
     ensureGuestIdle(req);
-    const u={id:randomId(), email, pass:hashPassword(b.password), createdAt:now()};
-    store.db.users.push(u); const guestCaseId=saveGuestConversation(req,u);
+    const u={id:randomId(), email, pass:hashPassword(b.password), createdAt:now(),
+      credits:TRIAL_CREDITS,accountType:"trial",freeCreditVersion:2};
+    store.db.users.push(u); const guestCaseId=saveGuestConversation(req,u,null,true);
     store.save(); newSession(u,res,b.remember===true);
     return json(res,201,{user:safeUser(u),guestCaseId});
   }
@@ -482,10 +517,10 @@ async function api(req,res,url) {
     try{grant=allocateVerifiedRegistration(store.db,pending.referralCode);}
     catch{fail(409,"Партнёрский код больше недействителен. Начните регистрацию заново");}
     const u={id:randomId(),email,pass:pending.pass,emailVerified:true,createdAt:now(),
-      credits:grant.credits,accountType:"trial",referralCode:grant.referralCode,
+      credits:grant.credits,accountType:"trial",freeCreditVersion:2,referralCode:grant.referralCode,
       referralSource:pending.referralSource||null};
     store.db.users.push(u);
-    const guestCaseId=saveGuestConversation(req,u,pending.guestHash);
+    const guestCaseId=saveGuestConversation(req,u,pending.guestHash,true);
     store.save();newSession(u,res,pending.remember);
     return json(res,201,{user:safeUser(u),guestCaseId});
   }
@@ -640,23 +675,27 @@ async function api(req,res,url) {
     if(balanceOf(u)!==null&&docs.reduce((sum,d)=>sum+d.bytes.length,0)>1500000)
       fail(413,"Пробный тариф: объём выбранных файлов для одного анализа не должен превышать 1,5 МБ");
     verifyCreditAccess(u,cost);
+    if(u.accountType==="trial")enforceFreeApiBudget();
     if(activeModelRequests.has(u.id))fail(429,"Другой запрос уже обрабатывается. Дождитесь ответа");
     activeModelRequests.add(u.id);
     try {
     const history=store.db.messages.filter(m=>m.caseId===id);
-    const first=await askModel(baseRequest(c,history,message,docs,mode,balanceOf(u)!==null));
-    let result=first;
+    const first=await askModel(baseRequest(c,history,message,docs,mode,balanceOf(u)!==null,u.accountType==="trial"));
+    let result=first,critiqueResult=null;
     if (["strategy","review"].includes(mode) && process.env.SECOND_PASS_ENABLED!=="0") {
       // An actual separate skeptical review, not a claim that one was conducted.
       const critique = await askModel({
-        model:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?3000:4500,reasoning:{effort:"medium"},
+        model:u.accountType==="trial"?FREE_MODEL:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?3000:4500,reasoning:{effort:"medium"},
         instructions:"Ты независимый юридический ревизор Республики Казахстан. Найди фактические, доказательственные, процессуальные и нормативные ошибки. Не придумывай нормы и не подтверждай их без источников. Дай ИСПРАВЛЕННУЮ окончательную позицию, сохрани сильные аргументы, укажи степень достоверности.",
         input:`Задача клиента: ${message}\nКарточка дела: ${c.title} / ${c.objective}; контекст: ${(c.summary||"").slice(0,7000)}\nПервоначальный ответ: ${first.text}\nСделай независимую проверку и напиши итоговый ответ.`,
       });
+      critiqueResult=critique;
       result={text:critique.text,sources:[...first.sources,...critique.sources.filter(s=>!first.sources.some(t=>t.url===s.url))]};
     }
     const time=now();
     commitBilledAnswer(u,c,cost,()=>{
+      recordProviderUsage(first,u,u.accountType==="trial");
+      if(critiqueResult)recordProviderUsage(critiqueResult,u,u.accountType==="trial");
       store.db.messages.push({id:randomId(),caseId:id,role:"user",text:message,mode,requestId,createdAt:time});
       store.db.messages.push({id:randomId(),caseId:id,role:"assistant",text:result.text,
         sources:result.sources,mode,requestId,createdAt:now()});
@@ -669,17 +708,19 @@ async function api(req,res,url) {
   if (req.method==="POST" && action==="compact") {
     const cost=aiTokenCost("compact");
     verifyCreditAccess(u,cost);
+    if(u.accountType==="trial")enforceFreeApiBudget();
     if(activeModelRequests.has(u.id))fail(429,"Другой запрос уже обрабатывается. Дождитесь ответа");
     const messages=store.db.messages.filter(m=>m.caseId===id).slice(balanceOf(u)!==null?-25:-80);
     if(!messages.length) fail(400,"В деле пока нет сообщений");
     activeModelRequests.add(u.id);
     try {
     const digest=await askModel({
-      model:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?2400:3600,
+      model:u.accountType==="trial"?FREE_MODEL:MODEL,store:false,max_output_tokens:balanceOf(u)!==null?2400:3600,
       instructions:"Создай обновлённую структурированную, нейтральную карточку юридического дела на русском. Не выдумывай факты. Сохрани старые версии и противоречия, укажи источники если даны. Структура: ЦЕЛЬ; СТОРОНЫ; ДОКУМЕНТЫ; ХРОНОЛОГИЯ; ДОКАЗАННЫЕ ФАКТЫ; УТВЕРЖДЕНИЯ; ГИПОТЕЗЫ; ПРОТИВОРЕЧИЯ; НЕХВАТКА ДОКАЗАТЕЛЬСТВ; СРОКИ; ПРОЦЕССУАЛЬНЫЕ ВАРИАНТЫ; РИСКИ; СЛЕДУЮЩИЙ ШАГ. Никогда не выдавай гипотезу за факт.",
       input:`Название: ${c.title}\nЦель: ${c.objective}\nПрежняя карточка:\n${c.summary}\nИстория:\n${messages.map(m=>m.role+": "+m.text).join("\n\n").slice(-85000)}`,
     });
     commitBilledAnswer(u,c,cost,()=>{
+      recordProviderUsage(digest,u,u.accountType==="trial");
       c.summary=digest.text.slice(0,30000);c.updatedAt=now();
     });
     return json(res,200,{summary:c.summary,cost:displayTokens(cost),...profile(u)});
@@ -786,9 +827,9 @@ const server=http.createServer(async(req,res)=>{
             const grant=allocateVerifiedRegistration(store.db,flow.referralCode);
             user={id:randomId(),email:identity.email,pass:null,googleSub:identity.sub,
               emailVerified:true,createdAt:now(),credits:grant.credits,
-              accountType:"trial",referralCode:grant.referralCode,
+              accountType:"trial",freeCreditVersion:2,referralCode:grant.referralCode,
               referralSource:flow.referralSource||null};
-            store.db.users.push(user);saveGuestConversation(req,user,flow.guestHash);store.save();
+            store.db.users.push(user);saveGuestConversation(req,user,flow.guestHash,true);store.save();
             registered=true;
           } else {
             // Existing Google account: migrate the still-unclaimed guest chat too.

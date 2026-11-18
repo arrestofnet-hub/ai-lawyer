@@ -1,6 +1,6 @@
-// Internal AI-tokens are prepaid service credits, NOT provider API token units.
-// A bonus of 50 AI-tokens corresponds to 50 short consultations; complex modes
-// consume more. Campaigns cannot be issued or changed by public users.
+// Internal service tokens are NOT provider API tokens. Values below are stored
+// as legacy credits, each worth exactly 100 public tokens, for backwards
+// compatibility with encrypted balances and referral campaigns.
 import crypto from "node:crypto";
 
 // Public display unit: 100 AI Lawyer tokens = 1 legacy prepaid service credit.
@@ -11,14 +11,31 @@ export function displayTokens(legacyCredits) {
     : legacyCredits*PUBLIC_TOKEN_MULTIPLIER;
 }
 
-export const REFERRAL_BONUS=50;
-export const TRIAL_CREDITS=3;
+export const REFERRAL_BONUS=50; // 5,000 extra tokens via a valid referral.
+export const TRIAL_CREDITS=200; // 20,000 tokens after verified signup.
+export const GUEST_PUBLIC_TOKENS=20000; // One shared welcome budget.
+export const GUEST_CONSULT_COST=1500; // Ten consultations cost 15,000 total.
+export const GUEST_DOCUMENT_COST=5000; // One document costs 5,000 total.
+export const PACKAGES=Object.freeze([
+  Object.freeze({id:"start",tokens:100000,priceKzt:19900}),
+  Object.freeze({id:"plus",tokens:500000,priceKzt:94900}),
+  Object.freeze({id:"pro",tokens:1000000,priceKzt:179900})
+]);
 export const MODE_COSTS=Object.freeze({
-  consult:1,audit:6,strategy:8,draft:6,review:8,compact:2
+  consult:15,audit:80,strategy:120,draft:50,review:120,compact:30
 });
 export function aiTokenCost(mode,documentCount=0) {
-  if(mode==="consult")return documentCount?Math.max(3,documentCount*3):1;
-  return MODE_COSTS[mode]||1;
+  if(mode==="consult")return documentCount?45+Math.max(0,documentCount-1)*15:15;
+  return MODE_COSTS[mode]||15;
+}
+export function remainingGuestTokens(guest) {
+  if(!guest)return 0;
+  // Preserve spent amounts from the previous guest layout. Both old and new
+  // guest sessions use 'used' and 'draftUsed'; no separate balance to reset.
+  const consults=Math.max(0,Math.min(10,Number(guest.used)||0));
+  const drafts=guest.draftUsed===true?1:0;
+  return Math.max(0,GUEST_PUBLIC_TOKENS-
+    consults*GUEST_CONSULT_COST-drafts*GUEST_DOCUMENT_COST);
 }
 export function normalizeReferral(raw) {
   const code=String(raw??"").trim().toUpperCase();
@@ -53,7 +70,7 @@ export function registrationCredit(db,raw) {
   if(raw){
     const campaign=campaignByCode(db,raw);
     if(!campaign)throw Error("Партнёрская ссылка недействительна или лимит регистраций исчерпан");
-    return {credits:REFERRAL_BONUS,referralCode:campaign.code,partner:campaign.partner};
+    return {credits:TRIAL_CREDITS+REFERRAL_BONUS,referralCode:campaign.code,partner:campaign.partner};
   }
   return {credits:TRIAL_CREDITS,referralCode:null,partner:null};
 }
