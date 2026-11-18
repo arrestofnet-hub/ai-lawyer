@@ -199,7 +199,7 @@ function guestStatus(guest,req) {
     tokenBalance:balance,tokenCost:GUEST_CONSULT_COST,
     documentTokenCost:GUEST_DOCUMENT_COST,documentRemaining,
     reminderAt:GUEST_REMINDER,
-    ...(balance>0&&quota.restriction?{restriction:quota.restriction}:{}),
+    ...(quota.restriction?{restriction:quota.restriction}:{}),
     messages:guest?.messages.map(m=>store.publicMessage(m))||[]};
 }
 function openGuest(req,res) {
@@ -361,7 +361,7 @@ function charge(userId,credits=1) {
   store.db.usage = store.db.usage.filter(u => u.date >= new Date(Date.now()-14*86400000).toISOString().slice(0,10));
 }
 function verifyCreditAccess(user,cost){
-  const limit=user.accountType==="trial"?DAILY_LIMIT:Math.max(DAILY_LIMIT,5000);
+  const limit=user.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT;
   if(countToday(user.id)+cost>limit)
     fail(429,"Дневной лимит AI-токенов исчерпан. Обновится в 00:00 UTC");
   if(!canSpend(user,cost))
@@ -401,7 +401,7 @@ function commitBilledAnswer(user,caseData,cost,mutation) {
 function profile(user){
   return {balance:displayTokens(balanceOf(user)),
     dailyUsed:user?displayTokens(countToday(user.id)):0,
-    dailyLimit:displayTokens(user?.accountType==="trial"?DAILY_LIMIT:Math.max(DAILY_LIMIT,5000)),
+    dailyLimit:displayTokens(user?.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT),
     priceUnit:"токены AI Lawyer",prices:{
     consult:displayTokens(aiTokenCost("consult")),audit:displayTokens(aiTokenCost("audit")),
     strategy:displayTokens(aiTokenCost("strategy")),draft:displayTokens(aiTokenCost("draft")),
@@ -415,7 +415,7 @@ async function api(req,res,url) {
     const user = sessionFor(req);
     return json(res,200,{
       authenticated:!!user,user:user?safeUser(user):null,
-      configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(user?.accountType==="trial"?DAILY_LIMIT:Math.max(DAILY_LIMIT,5000)),
+      configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(user?.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT),
       packages:PACKAGES,paymentsEnabled:false,
       signupMode:mailEnabled()?"email":process.env.SIGNUP_INVITE_CODE?"invite":"disabled",
       emailVerificationEnabled:mailEnabled(),referralBonus:displayTokens(REFERRAL_BONUS),
