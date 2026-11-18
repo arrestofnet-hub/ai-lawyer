@@ -124,12 +124,19 @@ function renderPackages() {
   for(const [i,pkg] of state.packages.entries()){
     const article=document.createElement("article");
     article.className="plan-card";
-    const heading=document.createElement("h3");heading.textContent=["Старт","Плюс","Профессиональный"][i]||"Пакет";
+    const heading=document.createElement("h3");heading.textContent=pkg.name||["Пробный","Старт","Плюс","Практика","Профессиональный"][i]||"Пакет";
     const price=document.createElement("strong");price.textContent=formatCount(pkg.priceKzt)+" ₸";
     const details=document.createElement("p");details.textContent=formatCount(pkg.tokens)+" токенов AI Lawyer";
     const buy=document.createElement("button");buy.type="button";buy.disabled=true;
     buy.className="secondary";buy.textContent="Оплата подключается";
     article.append(heading,price,details,buy);root.append(article);
+  }
+  const compact=$("#guestPricePreview .compact-packages");
+  compact.replaceChildren();
+  for(const pkg of state.packages){
+    const span=document.createElement("span");
+    span.textContent=formatCount(pkg.tokens)+" — "+formatCount(pkg.priceKzt)+" ₸";
+    compact.append(span);
   }
 }
 function showPlans() { if(!$("#plans").open)$("#plans").showModal(); }
