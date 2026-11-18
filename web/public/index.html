@@ -24,7 +24,7 @@ dialog::backdrop{background:#10213a70}
 #guestPricePreview .compact-packages span{border:1px solid #dbe4ee;border-radius:8px;padding:4px 7px;background:white}
 #planNotice{font-size:13px;line-height:1.5;color:#66758a;padding:10px 0}
 #plans h2{margin:0 30px 12px 0}
-.plan-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}
 .plan-card{border:1px solid #dbe4ef;border-radius:14px;padding:16px;background:#f6f9fc}
 .plan-card h3{margin:0 0 10px;font-size:16px}
 .plan-card strong{font-size:24px;color:#173c68}
@@ -109,7 +109,7 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <div id="guestPricePreview" hidden>
 <strong>После бесплатного пакета</strong>
 <div>Зарегистрируйтесь и получите ещё 20 000 токенов. Неиспользованный гостевой остаток сохранится.</div>
-<div class="compact-packages"><span>100 000 — 19 900 ₸</span><span>500 000 — 94 900 ₸</span><span>1 000 000 — 179 900 ₸</span></div>
+<div class="compact-packages"><span>10 000 — 990 ₸</span><span>25 000 — 1 990 ₸</span><span>45 000 — 2 990 ₸</span><span>90 000 — 4 990 ₸</span><span>200 000 — 9 990 ₸</span></div>
 <div>Оплата пока не подключена. Пакеты указаны для ознакомления.</div>
 </div>
 <div id="loginOptions"><form id="authForm" autocomplete="on">
@@ -195,9 +195,11 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <p id="guestHistorySaved" hidden style="color:#16683e;font-weight:600">Гостевая переписка сохранена в вашем личном деле. Остаток бесплатных токенов переносится при новой регистрации.</p>
 <p class="muted">Бесплатно: 20 000 гостевых токенов, плюс 20 000 после подтверждённой регистрации. Остаток гостевого пакета не сгорает.</p>
 <div class="plan-grid" id="packageOffers">
-<article class="plan-card"><h3>Старт</h3><strong>19 900 ₸</strong><p>100 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
-<article class="plan-card"><h3>Плюс</h3><strong>94 900 ₸</strong><p>500 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
-<article class="plan-card"><h3>Профессиональный</h3><strong>179 900 ₸</strong><p>1 000 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
+<article class="plan-card"><h3>Пробный</h3><strong>990 ₸</strong><p>10 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
+<article class="plan-card"><h3>Старт</h3><strong>1 990 ₸</strong><p>25 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
+<article class="plan-card"><h3>Плюс</h3><strong>2 990 ₸</strong><p>45 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
+<article class="plan-card"><h3>Практика</h3><strong>4 990 ₸</strong><p>90 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
+<article class="plan-card"><h3>Профессиональный</h3><strong>9 990 ₸</strong><p>200 000 токенов</p><button type="button" disabled>Оплата подключается</button></article>
 </div>
 <p id="freePlanDetails" class="muted"></p>
 <p id="planNotice">Это предварительные цены. Оплата пока не подключена, никаких списаний с банковской карты не производится. Внутренние токены не являются API-токенами OpenAI.</p>
