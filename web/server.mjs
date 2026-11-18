@@ -30,8 +30,11 @@ const KEY = dataKey(process.env.DATA_KEY);
 const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data"), KEY);
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
-const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
-const FREE_MODEL = process.env.FREE_TIER_OPENAI_MODEL || "gpt-6.1-sol";
+// Unified Sol model for both free and future paid accounts. An explicit new
+// variable controls exceptions; legacy OPENAI_MODEL may still point to Astra
+// on older VPS installations, so intentionally do not inherit that setting.
+const MODEL = process.env.LAWYER_PRIMARY_MODEL || "gpt-6.1-sol";
+const FREE_MODEL = process.env.FREE_TIER_OPENAI_MODEL || MODEL;
 const FREE_API_BUDGET_USD=Math.max(1,Math.min(1000,Number(process.env.FREE_API_BUDGET_USD||15)));
 const SEARCH_ENABLED = process.env.ENABLE_LAW_SEARCH !== "0";
 // Legacy MAX_MESSAGES_PER_DAY is in stored credits (100 public tokens each).
