@@ -35,7 +35,10 @@ const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
 // This empty-by-default corpus can only contain source-dated official legal
 // passages; do not invent laws when no reviewed passages have been imported.
-const localNorms=loadLegalCorpus(path.join(dirname,"legal","corpus.json"));
+const legalPrivateFile=process.env.LEGAL_CORPUS_FILE||
+  path.join(store.dir,"legal-corpus.json");
+const localNorms=loadLegalCorpus(fs.existsSync(legalPrivateFile)
+  ?legalPrivateFile:path.join(dirname,"legal","corpus.json"));
 // Unified Sol model for both free and future paid accounts. An explicit new
 // variable controls exceptions; legacy OPENAI_MODEL may still point to Astra
 // on older VPS installations, so intentionally do not inherit that setting.
