@@ -76,7 +76,8 @@ async function fetchPage(url,fetchImpl){
   const u=new URL(url);
   if(u.protocol!=="https:"||!OFFICIAL_HOSTS.has(u.hostname)||
      u.username||u.password||u.port||u.search||u.hash)throw Error("Untrusted source");
-  const cached=PAGE_CACHE.get(url);
+  const useCache=fetchImpl===globalThis.fetch;
+  const cached=useCache?PAGE_CACHE.get(url):null;
   if(cached&&cached.until>Date.now())return cached.text;
   const response=await fetchImpl(url,{method:"GET",redirect:"error",
     headers:{accept:"text/html,application/xhtml+xml"},
@@ -94,8 +95,10 @@ async function fetchPage(url,fetchImpl){
     parts.push(Buffer.from(chunk));
   }
   const text=Buffer.concat(parts).toString("utf8");
-  PAGE_CACHE.set(url,{text,until:Date.now()+CACHE_MS});
-  if(PAGE_CACHE.size>20)PAGE_CACHE.delete(PAGE_CACHE.keys().next().value);
+  if(useCache){
+    PAGE_CACHE.set(url,{text,until:Date.now()+CACHE_MS});
+    if(PAGE_CACHE.size>20)PAGE_CACHE.delete(PAGE_CACHE.keys().next().value);
+  }
   return text;
 }
 export async function getLiveOfficialArticleContext(officialRegistry,query,{
