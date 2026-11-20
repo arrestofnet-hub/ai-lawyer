@@ -59,7 +59,7 @@ function specificNumbers(query,source){
   for(const m of String(query).matchAll(re))nums.add(m[1]);
   // The user may ask about "grounds and deadlines of cancelling an
   // executive inscription" without knowing the relevant article numbers.
-  if(source.id==="notary"&&/исполнител[ьн\w]{0,5}\s+надпис|надпис.{0,20}нотари/iu.test(query)){
+  if(source.id==="notary"&&/исполнител\p{L}{0,10}\s+надпис|надпис.{0,20}нотари/iu.test(query)){
     nums.add("92-6");nums.add("92-8");
   }
   return [...nums].slice(0,4);
