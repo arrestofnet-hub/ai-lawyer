@@ -14,12 +14,12 @@ const snapshots=loadArticleSnapshots(fileURLToPath(
 const S="2026-11-20";
 const options=(q)=>({asOf:S,maxAgeDays:0,relatedActIds:q?["Z100000261_"]:[]});
 
-test("23 official Adilet page snapshots for ГПК АППК ЧСИ and нотариат retain provenance",()=>{
-  assert.equal(snapshots.length,23);
+test("33 official Adilet page snapshots for ГПК АППК ЧСИ and нотариат retain provenance",()=>{
+  assert.equal(snapshots.length,33);
   assert.deepEqual([...new Set(snapshots.map(x=>x.actId))].sort(),
-    ["K1500000377","K2000000350","Z100000261_","Z970000155_"].sort());
+    ["K1400000231","K1400000235","K1500000377","K2000000350","Z100000261_","Z970000155_"].sort());
   assert.deepEqual(articleSnapshotStatus(snapshots),{
-    snapshotArticles:23,snapshotLastCapture:S,snapshotEditionsVerified:0});
+    snapshotArticles:33,snapshotLastCapture:S,snapshotEditionsVerified:0});
   for(const record of snapshots){
     assert.equal(record.effectiveDateVerified,false);
     assert.equal(record.editionDateVerified,false);
