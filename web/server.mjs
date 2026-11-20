@@ -34,6 +34,7 @@ const ORIGIN = String(process.env.PUBLIC_ORIGIN || "http://localhost:" + PORT).r
 const KEY = dataKey(process.env.DATA_KEY);
 const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data"), KEY);
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
+const practiceMethods=fs.readFileSync(path.join(dirname,"strategy","LEGAL_PRACTICE_METHODS_V3.md"),"utf8");
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
 // This empty-by-default corpus can only contain source-dated official legal
 // passages; do not invent laws when no reviewed passages have been imported.
@@ -363,7 +364,7 @@ function baseRequest(caseData, history, message, docs, mode, creditAccount=false
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs,
     { ...caseData, mode, localNormContext });
   return {
-    model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy + "\n\n" +
+    model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy+"\n\n"+practiceMethods+"\n\n"+
       selectLegalPlaybooks(playbooks,message,caseData.summary),mode),
     reasoning:{ effort:"medium" }, max_output_tokens:creditAccount?(mode==="consult"?2400:4000):6500,
     ...(SEARCH_ENABLED ? { tools:[{ type:"web_search", search_context_size:"medium", filters:{ allowed_domains:["adilet.zan.kz","zan.gov.kz","gov.kz","sud.gov.kz","egov.kz"] } }] } : {}),
