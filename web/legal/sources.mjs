@@ -78,6 +78,8 @@ export function selectOfficialSources(sources,query,{max=5}={}){
     for(const keyword of entry.keywords){
       const key=normalized(keyword);
       if(text.includes(key))score+=key.includes(" ")?8:5;
+      else if(key.includes(" ")&&words(key).every(k=>
+        ws.some(w=>w.startsWith(k))))score+=6;
       else if(!key.includes(" ")&&ws.some(w=>w.startsWith(key)))score+=4;
     }
     const name=words(entry.title).filter(x=>x.length>=5&&!STOP.has(x));
