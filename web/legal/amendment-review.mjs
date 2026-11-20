@@ -13,6 +13,9 @@ function clean(s){
 }
 export function classifyEntryRule(note){
   const s=clean(note);
+  const mentions=(s.match(/вводится\s+в\s+действие/giu)||[]).length;
+  if(mentions>1)return {kind:"mixed_rules",verified:false,
+    reason:"Сноска содержит несколько правил; их нельзя автоматически приписать одному изменяющему закону"};
   const explicit=s.match(/вводится\s+в\s+действие\s+с\s+(\d{2}\.\d{2}\.\d{4})/iu);
   if(explicit)return {kind:"date_in_note",observedDate:explicit[1],
     verified:false,reason:"Дата указана в сноске, но применимость поправки и исключения не проверены"};
