@@ -84,20 +84,21 @@ function extractedCaseDate(q){
   return {years,dates:[...iso,...ru]};
 }
 export function retrieveArticleSnapshots(snapshots,query,{
-  asOf=new Date().toISOString().slice(0,10),limit=4,maxAgeDays=30
+  asOf=new Date().toISOString().slice(0,10),limit=4,maxAgeDays=30,relatedActIds=[]
 }={}){
   checkedDate(asOf);
   const terms=words(query);
-  if(!terms.length)return [];
+  const related=new Set(relatedActIds);
+  if(!terms.length&&!related.size)return [];
   const dates=extractedCaseDate(query);
   const output=[];
   const age=Number.isFinite(maxAgeDays)?Math.min(90,Math.max(0,maxAgeDays)):30;
   for(const s of snapshots){
     const days=Math.round((Date.parse(asOf)-Date.parse(s.snapshotDate))/86400000);
     if(days<0||days>age||dates.years.some(y=>y<Number(s.snapshotDate.slice(0,4)))||
-       dates.dates.some(d=>d<s.snapshotDate))continue;
+       dates.dates.some(d=>d!==s.snapshotDate))continue;
     const hay=s.text.toLowerCase(),title=s.article.toLowerCase();
-    let score=0;
+    let score=related.has(s.actId)?12:0;
     for(const t of terms)score+=
       (title.includes(t)?6:0)+(hay.includes(t)?1:0);
     if(score>0)output.push({entry:s,score,ageDays:days});
