@@ -48,7 +48,7 @@ test("source pointers route legal specialties without pretending statutes have b
   assert.equal(selectOfficialSources(registry,"хочу приготовить ужин").length,0);
   const pointer=sourcePointerContext(registry,"Арест ЧСИ");
   assert.match(pointer,/НЕ ТЕКСТЫ НОРМ/);
-  assert.match(pointer,/проверь/i);
+  assert.match(pointer,/найди её точный/i);
   assert.match(pointer,/adilet.zan.kz/);
   assert.doesNotMatch(pointer,/\[Источник \w+\] .*ЦИТАТА:/);
   const msg=buildMessages([],"Арест ЧСИ",[],{
