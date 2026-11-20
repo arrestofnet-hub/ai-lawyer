@@ -27,7 +27,7 @@ export function validateOfficialSource(raw){
     throw Error("Unverified law catalogue must not claim validated legal text");
   if(raw.language!=="ru")throw Error("Unsupported law catalogue language");
   if(!Array.isArray(raw.keywords)||!raw.keywords.length||raw.keywords.length>30||
-     raw.keywords.some(k=>typeof k!=="string"||k.trim().length<3||k.length>60))
+     raw.keywords.some(k=>typeof k!=="string"||k.trim().length<2||k.length>60))
     throw Error("Invalid law catalogue keywords");
   if(typeof raw.description!=="string"||raw.description.length<10||
     raw.description.length>320)throw Error("Invalid source description");
