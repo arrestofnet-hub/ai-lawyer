@@ -6,6 +6,7 @@ import {loadOfficialRegistry} from "../legal/sources.mjs";
 import {loadArticleSnapshots,validateArticleSnapshot,validateArticleSnapshots,
  retrieveArticleSnapshots,buildArticleSnapshotContext,articleSnapshotStatus}
  from "../legal/snapshots.mjs";
+import {auditSourceSnapshotDrift} from "../legal/snapshot-drift.mjs";
 
 const registry=loadOfficialRegistry(fileURLToPath(
  new URL("../legal/official-sources.json",import.meta.url)));
@@ -74,4 +75,23 @@ test("source snapshots can be retrieved via trusted law abbreviations and explan
   assert.match(context,/https:\/\/adilet\.zan\.kz/);
   assert.ok(context.length<16000);
   assert.equal(buildArticleSnapshotContext(snapshots,"ЧСИ 2024",options("chsi")),"");
+});
+
+test("official-source drift audit detects silent changes and never auto-publishes",()=>{
+  const one=snapshots.filter(x=>x.actId==="Z100000261_");
+  const complete=one.map(x=>x.text).join("\n\n");
+  const unchanged=auditSourceSnapshotDrift(snapshots,"Z100000261_",complete);
+  assert.equal(unchanged.unchanged,one.length);
+  assert.equal(unchanged.changed,0);
+  assert.equal(unchanged.cannotVerify,0);
+  assert.equal(unchanged.requiresReview,false);
+  assert.equal(unchanged.autoPublish,false);
+  const changed=auditSourceSnapshotDrift(snapshots,"Z100000261_",
+    complete.replace("восстановление нарушенных прав","восстановление иных прав"));
+  assert.equal(changed.changed,1);
+  assert.equal(changed.requiresReview,true);
+  assert.equal(changed.autoPublish,false);
+  const missing=auditSourceSnapshotDrift(snapshots,"Z100000261_",one[0].text);
+  assert.equal(missing.cannotVerify,one.length-1);
+  assert.throws(()=>auditSourceSnapshotDrift(snapshots,"UNKNOWN","Статья 1. A\nSome sufficiently long contents"),/No snapshots/);
 });
