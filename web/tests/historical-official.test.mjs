@@ -27,11 +27,13 @@ test("historical texts have archive links, edition caveat and selected date",asy
     asOf:"2026-11-21",fetchImpl:async(url,opts)=>{urls.push(url);return fixture(url,opts);}
   });
   assert.equal(x.historical,true);
-  assert.deepEqual(urls,["https://old.adilet.zan.kz/rus/docs/Z970000155_/history","https://old.adilet.zan.kz/rus/archive/docs/Z970000155_/01.07.2023"]);
+  assert.deepEqual(urls,["https://old.adilet.zan.kz/rus/docs/Z970000155_/history","https://old.adilet.zan.kz/rus/archive/docs/Z970000155_/01.07.2023","https://old.adilet.zan.kz/rus/archive/docs/Z970000155_/05.07.2024"]);
   assert.match(x.context,/дата события: 2024-04-18/);
   assert.match(x.context,/2023-07-01/);assert.match(x.context,/2024-07-05/);
   assert.match(x.context,/СТАТЬЯ 92-6/);assert.match(x.context,/СТАТЬЯ 92-8/);
   assert.match(x.context,/НЕ подтверждение даты вступления/);
+  assert.match(x.context,/СОПОСТАВЛЕНИЕ ТЕКСТОВ/);
+  assert.match(x.context,/текст совпадает в извлечённых редакциях/);
 });
 test("multiple dates refuse a fabricated operative revision without fetching",async()=>{
   let calls=0;
