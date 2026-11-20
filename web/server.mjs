@@ -30,6 +30,7 @@ import {loadOfficialRegistry,selectOfficialSources,sourcePointerContext,official
 import {loadArticleSnapshots,retrieveArticleSnapshots,buildArticleSnapshotContext,
   articleSnapshotStatus} from "./legal/snapshots.mjs";
 import {getLiveOfficialArticleContext} from "./legal/live-official.mjs";
+import {getHistoricalOfficialContext} from "./legal/historical.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -366,7 +367,9 @@ async function baseRequest(caseData, history, message, docs, mode, creditAccount
   const legalQuery=message+" "+(caseData.objective||"");
   const matchingActs=selectOfficialSources(officialSources,legalQuery,{max:6})
     .map(x=>x.actId);
-  const liveNormContext=await getLiveOfficialArticleContext(officialSources,legalQuery);
+  const historic=await getHistoricalOfficialContext(officialSources,legalQuery);
+  const liveNormContext=historic.historical?historic.context:
+    await getLiveOfficialArticleContext(officialSources,legalQuery);
   const localNormContext=liveNormContext+buildLegalContext(localNorms,legalQuery)+
     buildArticleSnapshotContext(officialArticleSnapshots,legalQuery,{
       limit:3,relatedActIds:matchingActs
