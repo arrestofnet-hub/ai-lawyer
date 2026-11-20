@@ -101,6 +101,21 @@ export function selectOfficialSources(sources,query,{max=5}={}){
   hits.sort((a,b)=>b.score-a.score||a.entry.id.localeCompare(b.entry.id));
   return hits.slice(0,Math.max(1,Math.min(8,Number(max)||5))).map(x=>x.entry);
 }
+// Citation source routing differs from broad navigation ranking. For a
+// request about the procedural articles of an executive inscription, the
+// provisions live in the Law on Notaries, not in the Supreme Court's
+// interpretive resolution. Keep the latter as supplementary navigation only.
+export function selectProvisionSources(sources,query,{max=5}={}){
+  const ranked=selectOfficialSources(sources,query,{max:8});
+  const text=normalized(query);
+  const isNotaryTopic=/(?:исполнител\p{L}{0,10}\s+надпис\p{L}*|нотари\p{L}*\s+надпис\p{L}*|закон[а-я ]{0,15}\s+о нотариате)/iu.test(text);
+  const notary=ranked.find(x=>x.id==="notary");
+  if(!isNotaryTopic||!notary)return ranked.slice(0,max);
+  // The notarial act controls the statutory procedure. Court explanations
+  // remain useful but must not be searched for the numbered statutory articles.
+  return [notary,...ranked.filter(x=>x.id!=="notary")].slice(0,max);
+}
+
 export function sourcePointerContext(sources,query,{max=4}={}){
   const hits=selectOfficialSources(sources,query,{max});
   if(!hits.length)return "";
