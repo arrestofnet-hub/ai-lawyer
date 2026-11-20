@@ -11,10 +11,10 @@ import {stageArticleCandidates} from "../legal/staging.mjs";
 import {buildMessages} from "../core.mjs";
 
 const registry=loadOfficialRegistry(fileURLToPath(new URL("../legal/official-sources.json",import.meta.url)));
-test("15 Kazakhstan legal source catalogue records have precise official Adilet URLs and no fake legal text",()=>{
-  assert.equal(registry.length,15);
+test("29 Kazakhstan legal source catalogue records have precise official Adilet URLs and no fake legal text",()=>{
+  assert.equal(registry.length,29);
   assert.deepEqual(officialSourceStatus(registry),{
-    cataloguedActs:15,catalogOnly:true,lastMetadataCheck:"2026-11-20"
+    cataloguedActs:29,catalogOnly:true,lastMetadataCheck:"2026-11-20"
   });
   for(const item of registry){
     assert.equal(item.reviewState,"catalogue_only");
