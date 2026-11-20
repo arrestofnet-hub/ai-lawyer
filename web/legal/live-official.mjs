@@ -2,7 +2,7 @@
 // A fetched article is a dated official-page observation, NOT proof that this
 // edition had entered into force on the date of the user's events.
 import crypto from "node:crypto";
-import {selectOfficialSources} from "./sources.mjs";
+import {selectProvisionSources} from "./sources.mjs";
 
 const OFFICIAL_HOSTS=new Set(["adilet.zan.kz","old.adilet.zan.kz"]);
 const PAGE_CACHE=new Map();
@@ -105,7 +105,7 @@ export async function getLiveOfficialArticleContext(officialRegistry,query,{
   fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10)
 }={}){
   if(process.env.LIVE_OFFICIAL_LAW_ENABLED==="0")return "";
-  const matched=selectOfficialSources(officialRegistry,query,{max:3});
+  const matched=selectProvisionSources(officialRegistry,query,{max:3});
   const jobs=matched.map(source=>({source,numbers:specificNumbers(query,source)}))
     .filter(x=>x.numbers.length).slice(0,1);
   if(!jobs.length)return "";
