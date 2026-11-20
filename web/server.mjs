@@ -363,8 +363,12 @@ async function askModel(payload) {
 }
 function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
   const legalQuery=message+" "+(caseData.objective||"");
+  const matchingActs=selectOfficialSources(officialSources,legalQuery,{max:6})
+    .map(x=>x.actId);
   const localNormContext=buildLegalContext(localNorms,legalQuery)+
-    buildArticleSnapshotContext(officialArticleSnapshots,legalQuery,{limit:3})+
+    buildArticleSnapshotContext(officialArticleSnapshots,legalQuery,{
+      limit:3,relatedActIds:matchingActs
+    })+
     sourcePointerContext(officialSources,legalQuery,{max:4});
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs,
     { ...caseData, mode, localNormContext });
@@ -449,7 +453,10 @@ async function api(req,res,url) {
   }
   if(req.method==="GET"&&p==="/chat/api/legal/articles"){
     const q=String(url.searchParams.get("q")||"").trim().slice(0,400);
-    const matches=q?retrieveArticleSnapshots(officialArticleSnapshots,q,{limit:5}):[];
+    const relatedActIds=selectOfficialSources(officialSources,q,{max:8}).map(x=>x.actId);
+    const matches=q?retrieveArticleSnapshots(officialArticleSnapshots,q,{
+      limit:5,relatedActIds
+    }):[];
     return json(res,200,{articles:matches.map(x=>({
       id:x.id,article:x.article,actId:x.actId,sourceUrl:x.canonicalUrl,
       capturedFrom:x.capturedFrom,capturedOn:x.snapshotDate,ageDays:x.ageDays,
