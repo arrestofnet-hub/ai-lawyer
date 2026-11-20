@@ -75,7 +75,7 @@ test("stage extracts distinct article candidates only as unpublished drafts and 
   assert.ok(result.articles[0].text.includes("Исключение"));
   assert.throws(()=>stageArticleCandidates(registry[0],
     "Договор клиента, ИИН 123456789012\n"+sample),/personal identifiers/);
-  assert.throws(()=>stageArticleCandidates(registry[0],"Нет заголовков статей"+sample.replaceAll("Статья","Глава"))),
+  assert.throws(()=>stageArticleCandidates(registry[0],"Нет заголовков статей"+sample.replaceAll("Статья","Глава")),
     /No explicit/);
 });
 test("staging command writes reviewed-only output and never overwrites existing draft",()=>{
