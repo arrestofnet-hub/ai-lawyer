@@ -5,6 +5,7 @@
 import crypto from "node:crypto";
 import {selectOfficialSources} from "./sources.mjs";
 import {parseOfficialArticles,specificNumbers} from "./live-official.mjs";
+import {buildAmendmentReviewContext} from "./amendment-review.mjs";
 
 const MAX_HTML=5_000_000;
 function isoFromDate(s){
@@ -118,6 +119,23 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
     "\nАРХИВ ОФИЦИАЛЬНОГО ЗАКОНА НАЙДЕН, НО ТЕКСТ ТРЕБУЕМЫХ СТАТЕЙ НЕ ИЗВЛЕЧЁН. "+
     "Событие: "+hint.date+"; архив: "+archivePage.url+". "+
     "Не цитировать неполные или современные нормы как исторические."+caution};
+  // Optional comparison with the closest following official archived revision.
+  // Its date is a DOCUMENT EDIT DATE, not a legal effective date.
+  let nextHtml=null,nextArticles=[];
+  if(revision.next&&revision.next<=asOf&&
+      process.env.AMENDMENT_REVIEW_ENABLED!=="0"){
+    try{
+      const url="https://old.adilet.zan.kz/rus/archive/docs/"+
+        source.actId+"/"+ddmmyyyy(revision.next);
+      nextHtml=await readOfficialPage(url,fetchImpl);
+      nextArticles=parseOfficialArticles(nextHtml,numberList);
+    }catch{ nextHtml=null;nextArticles=[]; }
+  }
+  const review=buildAmendmentReviewContext({
+    actId:source.actId,articleNumbers:numberList,eventDate:hint.date,
+    priorDate:revision.prior,nextDate:revision.next,
+    priorHtml:archivePage.html,priorArticles:articles,nextHtml,nextArticles
+  });
   const notes=articles.map(x=>{
     const sha=crypto.createHash("sha256").update(x.text,"utf8").digest("hex");
     return "СТАТЬЯ "+x.article+"; архив Әділет: "+archivePage.url+
@@ -128,7 +146,7 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
     "\nАРХИВНЫЕ ТЕКСТЫ ИЗ ИСТОРИИ ИЗМЕНЕНИЙ ӘДІЛЕТ; дата события: "+hint.date+
     "; архивная дата не позже события: "+revision.prior+
     (revision.next?"; следующая указанная архивная дата: "+revision.next:"")+
-    "; история: "+source.historyUrl+".\n"+caution+"\n"+notes+
+    "; история: "+source.historyUrl+".\n"+caution+"\n"+review.context+"\n"+notes+
     (missing.length?"\nНе получены архивные статьи: "+missing.join(", ")+".":"")
   ).slice(0,15000)};
 }
