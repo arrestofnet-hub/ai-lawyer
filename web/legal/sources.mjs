@@ -64,8 +64,10 @@ const STOP=new Set(["закона","законодательства","респ�
  "кодекс","статья","статьи","суд","срок","вопрос","какой","который","подготовь"]);
 export function selectOfficialSources(sources,query,{max=5}={}){
   const text=normalized(query);
-  const ws=words(text).filter(x=>x.length>3&&!STOP.has(x));
-  if(!ws.length)return [];
+  // Short legal abbreviations (ЧСИ, МФО, ГК, ГПК) must remain searchable.
+  // Match them only against the vetted registry keywords, not inferred laws.
+  const ws=words(text).filter(x=>x.length>=3&&!STOP.has(x));
+  if(text.length<2)return [];
   const hits=[];
   for(const entry of sources){
     // The 1995 bank law has a partial repeal: show it only for an explicitly
