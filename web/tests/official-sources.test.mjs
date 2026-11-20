@@ -32,6 +32,11 @@ test("15 Kazakhstan legal source catalogue records have precise official Adilet 
 test("source pointers route legal specialties without pretending statutes have been checked",()=>{
   const chsi=selectOfficialSources(registry,"ЧСИ наложил арест на счета");
   assert.ok(chsi.some(x=>x.id==="enforcement"));
+  assert.ok(selectOfficialSources(registry,"ЧСИ").some(x=>x.id==="enforcement"));
+  assert.ok(selectOfficialSources(registry,"МФО").some(x=>x.id==="mfo"));
+  assert.ok(selectOfficialSources(registry,"ГК").some(x=>x.id==="gk-general"));
+  assert.ok(selectOfficialSources(registry,"ГК").some(x=>x.id==="gk-special"));
+  assert.ok(selectOfficialSources(registry,"ГПК").some(x=>x.id==="gpk"));
   assert.ok(selectOfficialSources(registry,"Исполнительная надпись нотариуса")
     .some(x=>x.id==="notary"));
   assert.ok(selectOfficialSources(registry,"МФО требует микрокредит")
