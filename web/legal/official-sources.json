@@ -1,0 +1,318 @@
+[
+  {
+    "id": "gk-general",
+    "title": "Гражданский кодекс Республики Казахстан (Общая часть)",
+    "actId": "K940001000_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/K940001000_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/K940001000_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/K940001000_/info",
+    "language": "ru",
+    "keywords": [
+      "договор",
+      "сделк",
+      "обязательств",
+      "цесс",
+      "уступк",
+      "срок исков",
+      "право требован"
+    ],
+    "description": "Гражданско-правовые основания и переход права требования",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "gk-special",
+    "title": "Гражданский кодекс Республики Казахстан (Особенная часть)",
+    "actId": "K990000409_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/K990000409_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/K990000409_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/K990000409_/info",
+    "language": "ru",
+    "keywords": [
+      "займ",
+      "заем",
+      "залог",
+      "купл",
+      "продаж",
+      "страхован",
+      "возмещен"
+    ],
+    "description": "Отдельные виды обязательств, залог, договоры",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "gpk",
+    "title": "Гражданский процессуальный кодекс Республики Казахстан",
+    "actId": "K1500000377",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/K1500000377",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/K1500000377/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/K1500000377/info",
+    "language": "ru",
+    "keywords": [
+      "иск",
+      "апелляц",
+      "упрощенн",
+      "приказн",
+      "судебн приказ",
+      "частн жалоб",
+      "судебн решен",
+      "судебн расход"
+    ],
+    "description": "Гражданское судопроизводство и процессуальные сроки",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "appk",
+    "title": "Административный процедурно-процессуальный кодекс Республики Казахстан",
+    "actId": "K2000000350",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/K2000000350",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/K2000000350/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/K2000000350/info",
+    "language": "ru",
+    "keywords": [
+      "аппк",
+      "административн процедур",
+      "административн иск",
+      "госорган",
+      "ответ ведомств",
+      "отписк",
+      "бездействи",
+      "заслушиван"
+    ],
+    "description": "Обжалование административных актов и действий",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "enforcement",
+    "title": "Об исполнительном производстве и статусе судебных исполнителей",
+    "actId": "Z100000261_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z100000261_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z100000261_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z100000261_/info",
+    "language": "ru",
+    "keywords": [
+      "чси",
+      "судебн исполнител",
+      "исполнительн производств",
+      "арест",
+      "запрет выезд",
+      "реестр должник",
+      "исполнителн лист"
+    ],
+    "description": "Исполнительное производство, ЧСИ и ограничения",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "notary",
+    "title": "О нотариате",
+    "actId": "Z970000155_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z970000155_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z970000155_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z970000155_/info",
+    "language": "ru",
+    "keywords": [
+      "нотари",
+      "исполнительн надпис",
+      "нотариальн",
+      "удостоверен доверенност"
+    ],
+    "description": "Нотариальные действия и исполнительные надписи",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "mfo",
+    "title": "О микрофинансовой деятельности",
+    "actId": "Z1200000056",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z1200000056",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z1200000056/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z1200000056/info",
+    "language": "ru",
+    "keywords": [
+      "мфо",
+      "микрокредит",
+      "микрофинанс",
+      "договор микрокредит",
+      "займ"
+    ],
+    "description": "Микрокредиты и деятельность МФО",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "collectors",
+    "title": "О коллекторской деятельности",
+    "actId": "Z1700000062",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z1700000062",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z1700000062/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z1700000062/info",
+    "language": "ru",
+    "keywords": [
+      "коллектор",
+      "взыскан задолженност",
+      "цесс",
+      "уступк требован"
+    ],
+    "description": "Взыскание долгов коллекторами",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "housing",
+    "title": "О жилищных отношениях",
+    "actId": "Z970000094_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z970000094_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z970000094_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z970000094_/info",
+    "language": "ru",
+    "keywords": [
+      "кск",
+      "ос и",
+      "осии",
+      "кондоминиум",
+      "квартир",
+      "общедом",
+      "тариф содержан",
+      "коммунал",
+      "мжд",
+      "капремонт"
+    ],
+    "description": "Многоквартирные дома, коммунальные платежи",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "credit-bureaus",
+    "title": "О кредитных бюро и формировании кредитных историй в Республике Казахстан",
+    "actId": "Z040000573_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z040000573_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z040000573_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z040000573_/info",
+    "language": "ru",
+    "keywords": [
+      "кредитн бюро",
+      "кредитн истор",
+      "пкб",
+      "гкб",
+      "кредитн отчет",
+      "согласие"
+    ],
+    "description": "Кредитная история, бюро и права субъекта",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "personal-bankruptcy",
+    "title": "О восстановлении платежеспособности и банкротстве граждан Республики Казахстан",
+    "actId": "Z2200000178",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z2200000178",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z2200000178/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z2200000178/info",
+    "language": "ru",
+    "keywords": [
+      "банкротств",
+      "восстановлен платежеспособност",
+      "внесудебн банкротств",
+      "финансов управляющ"
+    ],
+    "description": "Банкротство и восстановление платежеспособности",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "legal-acts",
+    "title": "О правовых актах",
+    "actId": "Z1600000480",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z1600000480",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z1600000480/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z1600000480/info",
+    "language": "ru",
+    "keywords": [
+      "правов акт",
+      "нормативн правов",
+      "вступлен в силу",
+      "редакц закон",
+      "иерархи норм"
+    ],
+    "description": "Действие и применение нормативных актов",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "legal-assistance",
+    "title": "Об адвокатской деятельности и квалифицированной юридической помощи",
+    "actId": "Z1800000176",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z1800000176",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z1800000176/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z1800000176/info",
+    "language": "ru",
+    "keywords": [
+      "адвокат",
+      "юридическ консультант",
+      "юридическ помощ",
+      "палат юридическ"
+    ],
+    "description": "Правовые услуги, адвокаты и юридические консультанты",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "bank-law-2026",
+    "title": "О банках и банковской деятельности в Республике Казахстан (закон 2026 года)",
+    "actId": "Z2600000258",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z2600000258",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z2600000258/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z2600000258/info",
+    "language": "ru",
+    "keywords": [
+      "банк",
+      "банковск",
+      "кредит",
+      "договор банковск",
+      "реструктуризац",
+      "банковск омбудсмен"
+    ],
+    "description": "Новый банковский закон 2026; редакцию и переходные нормы проверять",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false,
+    "transition": "Закон № 258-VIII от 16.01.2026 заменил основной массив банковского закона 1995 года; сверять сроки введения и переходные положения."
+  },
+  {
+    "id": "bank-law-1995",
+    "title": "О банках и банковской деятельности в Республике Казахстан (закон 1995 года, переходные положения)",
+    "actId": "Z950002444_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/Z950002444_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/Z950002444_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/Z950002444_/info",
+    "language": "ru",
+    "keywords": [
+      "банк",
+      "банковск",
+      "банковск заем",
+      "банковск омбудсмен"
+    ],
+    "description": "В основном заменён законом 2026 года, но часть статей имеет особые даты утраты силы; проверять на дату случая",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false,
+    "transition": "Предусмотрены исключения и разные даты утраты силы, в том числе некоторые положения до 01.01.2027; не применять без проверки переходных норм."
+  }
+]

@@ -25,6 +25,8 @@ import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
 import {blankDossier,validateDossier,dossierView,dossierPromptContext} from "./legal/dossier.mjs";
 import {loadLegalCorpus,buildLegalContext,legalCorpusStatus} from "./legal/norms.mjs";
+import {loadOfficialRegistry,selectOfficialSources,sourcePointerContext,officialSourceStatus}
+  from "./legal/sources.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -39,6 +41,7 @@ const legalPrivateFile=process.env.LEGAL_CORPUS_FILE||
   path.join(store.dir,"legal-corpus.json");
 const localNorms=loadLegalCorpus(fs.existsSync(legalPrivateFile)
   ?legalPrivateFile:path.join(dirname,"legal","corpus.json"));
+const officialSources=loadOfficialRegistry(path.join(dirname,"legal","official-sources.json"));
 // Unified Sol model for both free and future paid accounts. An explicit new
 // variable controls exceptions; legacy OPENAI_MODEL may still point to Astra
 // on older VPS installations, so intentionally do not inherit that setting.
@@ -354,7 +357,9 @@ async function askModel(payload) {
     webCalls:Array.isArray(data.output)?data.output.filter(x=>x.type==="web_search_call").length:0 };
 }
 function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
-  const localNormContext=buildLegalContext(localNorms,message+" "+(caseData.objective||""));
+  const legalQuery=message+" "+(caseData.objective||"");
+  const localNormContext=buildLegalContext(localNorms,legalQuery)+
+    sourcePointerContext(officialSources,legalQuery,{max:4});
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs,
     { ...caseData, mode, localNormContext });
   return {
@@ -426,9 +431,20 @@ function profile(user){
 
 async function api(req,res,url) {
   const p = url.pathname;
+  if(req.method==="GET"&&p==="/chat/api/legal/sources"){
+    const q=String(url.searchParams.get("q")||"").trim().slice(0,400);
+    const matches=q?selectOfficialSources(officialSources,q,{max:8}):officialSources;
+    return json(res,200,{sources:matches.map(x=>({
+      id:x.id,title:x.title,officialUrl:x.officialUrl,historyUrl:x.historyUrl,
+      metadataCheckedAt:x.metadataCheckedAt,reviewState:x.reviewState,
+      ...(x.transition?{transition:x.transition}:{})
+    })),count:matches.length,verifiedArticles:localNorms.length,
+      note:"Это каталог официальных актов, а не проверенные тексты статей и редакций."});
+  }
   if (req.method === "GET" && p === "/chat/api/legal/status") {
     return json(res,200,{...legalCorpusStatus(localNorms),
-      note:"Пустая или устаревшая локальная база не подтверждает действующее законодательство. Нормы сверяйте по официальным источникам."});
+      ...officialSourceStatus(officialSources),
+      note:"Каталог источников не содержит подтверждённых цитат. Нормы сверяйте по официальным источникам и по дате события."});
   }
   if (req.method === "GET" && p === "/chat/api/session") {
     const user = sessionFor(req);
