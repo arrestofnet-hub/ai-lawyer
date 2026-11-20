@@ -28,7 +28,7 @@ test("real 36-act registry prioritizes Law on Notaries for articles 92-6 and 92-
   assert.equal(ranked[0].actId,"Z970000155_");
   assert.ok(selectOfficialSources(registry,question).some(x=>x.id==="np-notarial-inscription"));
   assert.equal(selectProvisionSources(registry,"Исполнительная надпись нотариуса: срок возражения")[0].id,"notary");
-  assert.equal(selectProvisionSources(registry,"Нормативное постановление Верховного Суда об исполнительной надписи № 6 от 26.05.2022")[0].id,"notary");
+  assert.equal(selectProvisionSources(registry,"Нормативное постановление Верховного Суда об исполнительной надписи № 6 от 26.05.2022")[0].id,"np-notarial-inscription");
 });
 test("historical engine fetches notary law archival versions instead of court resolution",async()=>{
   const urls=[];
