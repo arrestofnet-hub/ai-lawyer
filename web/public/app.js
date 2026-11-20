@@ -660,6 +660,39 @@ $("#authScreen").addEventListener("cancel",ev=>{
 });
 $("#guestLogin").addEventListener("click",()=>openAuth(false));
 $("#guestRegister").addEventListener("click",()=>openAuth(true));
+async function renderLawSources(query=""){
+  const data=await request("/legal/sources"+(query?"?q="+encodeURIComponent(query):""));
+  const root=$("#lawSourcesList");root.replaceChildren();
+  $("#lawSourcesStatus").textContent=data.count+" официальных актов в каталоге · проверенных нормативных фрагментов: "+data.verifiedArticles;
+  for(const source of data.sources){
+    const card=document.createElement("article");card.className="law-row";
+    const name=document.createElement("strong");name.textContent=source.title;card.append(name);
+    const note=document.createElement("p");note.textContent="Ссылки ведут на официальный источник. Тексты статей и применимость редакции не подтверждены этим каталогом.";card.append(note);
+    for(const [label,url] of [["Текст акта",source.officialUrl],["История редакций",source.historyUrl]]){
+      try{
+        const valid=new URL(url);
+        if(valid.protocol!=="https:"||valid.hostname!=="adilet.zan.kz")continue;
+        const link=document.createElement("a");link.href=valid.href;link.target="_blank";
+        link.rel="noopener noreferrer";link.textContent=label;card.append(link);
+      }catch{}
+    }
+    if(source.transition){
+      const transition=document.createElement("p");transition.textContent=source.transition;
+      transition.style.color="#8d4d16";card.append(transition);
+    }
+    root.append(card);
+  }
+}
+$("#openLaws").addEventListener("click",()=>{
+  if(!$("#lawSources").open)$("#lawSources").showModal();
+  renderLawSources().catch(e=>$("#lawSourcesStatus").textContent=e.message);
+});
+$("#closeLaws").addEventListener("click",()=>$("#lawSources").close());
+$("#lawSearchForm").addEventListener("submit",ev=>{
+  ev.preventDefault();
+  renderLawSources($("#lawSearchQuery").value.trim()).catch(e=>
+    $("#lawSourcesStatus").textContent=e.message);
+});
 $("#openPlans").addEventListener("click",showPlans);
 $("#closePlans").addEventListener("click",()=>$("#plans").close());
 $("#continueFree").addEventListener("click",()=>$("#plans").close());
