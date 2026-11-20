@@ -36,11 +36,12 @@ export function parseOfficialHistory(html,actId){
   if(typeof html!=="string"||html.length<200||html.length>MAX_HTML||
      !/id=["']ethernatable["']/i.test(html))throw Error("Official history table missing");
   if(!/^[A-Z][A-Za-z0-9_]{5,30}$/.test(actId))throw Error("Invalid act");
-  const escaped=actId.replace(/[\W]/g,"\\$&");
-  const rx=new RegExp('href=["\\\'](?:https:\\/\\/old\\.adilet\\.zan\\.kz)?\\/rus\\/archive\\/docs\\/'+escaped+'\\/(\\d{2}\\.\\d{2}\\.\\d{4})["\\\']',"gi');
+  const rx=/href=["'](\/rus\/archive\/docs\/[A-Z][A-Za-z0-9_]{5,30}\/\d{2}\.\d{2}\.\d{4})["']/gi;
   const dates=new Set();
   for(const m of html.matchAll(rx)){
-    const d=isoFromDate(m[1]);if(d)dates.add(d);
+    const parts=m[1].split("/");
+    if(parts[4]!==actId)continue;
+    const d=isoFromDate(parts[5]);if(d)dates.add(d);
   }
   if(dates.size<2||dates.size>400)throw Error("Unreliable official history list");
   return [...dates].sort();
