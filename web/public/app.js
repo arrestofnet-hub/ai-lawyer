@@ -661,9 +661,36 @@ $("#authScreen").addEventListener("cancel",ev=>{
 $("#guestLogin").addEventListener("click",()=>openAuth(false));
 $("#guestRegister").addEventListener("click",()=>openAuth(true));
 async function renderLawSources(query=""){
-  const data=await request("/legal/sources"+(query?"?q="+encodeURIComponent(query):""));
+  const [data,health,articles]=await Promise.all([
+    request("/legal/sources"+(query?"?q="+encodeURIComponent(query):"")),
+    request("/legal/status"),
+    query?request("/legal/articles?q="+encodeURIComponent(query)):
+      Promise.resolve({articles:[],count:0})
+  ]);
   const root=$("#lawSourcesList");root.replaceChildren();
-  $("#lawSourcesStatus").textContent=data.count+" официальных актов в каталоге · проверенных нормативных фрагментов: "+data.verifiedArticles;
+  $("#lawSourcesStatus").textContent=data.count+
+    " актов в подборке · "+(health.snapshotArticles||0)+
+    " снимков статей из официальных текстов · проверенных редакций: "+data.verifiedArticles;
+  if(query&&articles.articles.length){
+    const heading=document.createElement("h3");heading.textContent=
+      "Фрагменты статей (дата действия НЕ подтверждена)";
+    root.append(heading);
+    const note=document.createElement("p");note.className="warning";
+    note.textContent="Это тексты, выгруженные из «Әділет». Перед применением к делу проверьте действовавшую редакцию, дату введения и поправки.";
+    root.append(note);
+    for(const piece of articles.articles){
+      const block=document.createElement("article");block.className="law-row";
+      const title=document.createElement("strong");title.textContent=piece.article;
+      const detail=document.createElement("p");detail.textContent=
+        "Акт "+piece.actId+" · снимок "+piece.capturedOn+
+        " · юридическая дата действия не проверена";
+      const excerpt=document.createElement("p");excerpt.textContent=piece.excerpt;
+      const link=document.createElement("a");link.href=piece.sourceUrl;
+      link.textContent="Открыть статью в официальном акте";link.rel="noopener noreferrer";
+      link.target="_blank";
+      block.append(title,detail,excerpt,link);root.append(block);
+    }
+  }
   for(const source of data.sources){
     const card=document.createElement("article");card.className="law-row";
     const name=document.createElement("strong");name.textContent=source.title;card.append(name);
