@@ -13,7 +13,7 @@ function validDate(v){
 export function validateOfficialSource(raw){
   if(!raw||typeof raw!=="object"||Array.isArray(raw))
     throw Error("Official source must be a record");
-  if(!/^[a-z][a-z0-9-]{2,49}$/.test(raw.id||""))
+  if(!/^[a-z][a-z0-9-]{1,49}$/.test(raw.id||""))
     throw Error("Invalid official source ID");
   if(typeof raw.title!=="string"||raw.title.trim().length<10||
     raw.title.length>240)throw Error("Official source title required");
