@@ -47,7 +47,7 @@ test("catalogue includes curated court explanations, Constitutional Court acts a
 });
 
 test("practical method synthesizes reusable general prompts but never embeds client private details",()=>{
-  assert.match(methods,/несколько/); 
+  assert.match(methods,/5–7/); 
   assert.match(methods,/УПК/);
   assert.match(methods,/Конституцион/);
   assert.match(methods,/судьи|судья|судей|судья/iu);
