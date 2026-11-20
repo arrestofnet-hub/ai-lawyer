@@ -53,7 +53,7 @@ export function parseOfficialArticles(html,articleNumbers){
   }
   return found;
 }
-function specificNumbers(query,source){
+export function specificNumbers(query,source){
   const nums=new Set();
   const re=/(?:стат(?:ья|ьи|ью|ье|ей)|ст\.)\s*№?\s*(\d{1,4}(?:-\d{1,2})?)/giu;
   for(const m of String(query).matchAll(re))nums.add(m[1]);
