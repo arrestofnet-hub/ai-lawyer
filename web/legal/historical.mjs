@@ -3,7 +3,7 @@
 // Historical snapshots are selected only from official history links.
 // Does not store raw case messages or fetch user-supplied URLs.
 import crypto from "node:crypto";
-import {selectOfficialSources} from "./sources.mjs";
+import {selectProvisionSources} from "./sources.mjs";
 import {parseOfficialArticles,specificNumbers} from "./live-official.mjs";
 import {buildAmendmentReviewContext} from "./amendment-review.mjs";
 
@@ -81,7 +81,7 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
   const hint=historicalDateHint(query,{asOf});
   if(!hint.historical||process.env.LIVE_OFFICIAL_LAW_ENABLED==="0")
     return {historical:false,context:""};
-  const source=selectOfficialSources(officialRegistry,query,{max:3})
+  const source=selectProvisionSources(officialRegistry,query,{max:3})
     .find(x=>specificNumbers(query,x).length);
   if(!source)return {historical:true,context:
     "\nИСТОРИЧЕСКИЙ ПРАВОВОЙ ВОПРОС. Нужный акт/статья не определены по каталогу. "+
