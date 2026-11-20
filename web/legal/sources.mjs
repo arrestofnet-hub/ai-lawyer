@@ -74,6 +74,10 @@ export function selectOfficialSources(sources,query,{max=5}={}){
     // historical question or when the user asks about transition clauses.
     if(entry.id==="bank-law-1995"&&!/1995|202[0-5]|до 2026|стар(ый|ого|ые)|переходн|утратил сил/.test(text))
       continue;
+    // 2026 constitutional replacement: historic text is relevant only for
+    // earlier events/explicit comparisons, never by default as current law.
+    if(entry.id==="constitution-1995"&&!/1995|202[0-5]|до 2026|стар(ый|ого|ые)|историческ|переходн|ранее|до 1 июля/.test(text))
+      continue;
     let score=0;
     for(const keyword of entry.keywords){
       const key=normalized(keyword);
