@@ -110,6 +110,13 @@ export function selectProvisionSources(sources,query,{max=5}={}){
   const text=normalized(query);
   const isNotaryTopic=/(?:исполнител\p{L}{0,10}\s+надпис\p{L}*|нотари\p{L}*\s+надпис\p{L}*|закон[а-я ]{0,15}\s+о нотариате)/iu.test(text);
   const notary=ranked.find(x=>x.id==="notary");
+  // Explicit requests for the Supreme Court's normative resolution are not
+  // requests for the procedural articles of the Law on Notaries.
+  const courtResolution=/(?:нп\s+вс\b|нормативн\p{L}*\s+постановлен\p{L}*.{0,40}верховн\p{L}*\s+суд\p{L}*)/iu.test(text);
+  if(courtResolution&&!/(?:92-6|92-8|закон\p{L}*\s+о\s+нотариате)/iu.test(text)){
+    const court=ranked.find(x=>x.id==="np-notarial-inscription");
+    if(court)return [court,...ranked.filter(x=>x.id!=="np-notarial-inscription")].slice(0,max);
+  }
   if(!isNotaryTopic||!notary)return ranked.slice(0,max);
   // The notarial act controls the statutory procedure. Court explanations
   // remain useful but must not be searched for the numbered statutory articles.
