@@ -60,10 +60,12 @@ export function loadOfficialRegistry(file){
 function normalized(v){return String(v||"").toLowerCase().replace(/ё/g,"е")
   .replace(/\s+/g," ").trim().slice(0,10000);}
 const words=raw=>normalized(raw).match(/[\p{L}\p{N}]{3,}/gu)||[];
+const ABBREVIATIONS=new Set(["ук","упк","гк","гпк","чси","мфо","кск","пкб","гкб","мжд","коап","аппк"]);
 const STOP=new Set(["закона","законодательства","республики","казахстан","гражданский",
  "кодекс","статья","статьи","суд","срок","вопрос","какой","который","подготовь"]);
 export function selectOfficialSources(sources,query,{max=5}={}){
   const text=normalized(query);
+  const exactWords=new Set(text.match(/[\p{L}\p{N}]{2,}/gu)||[]);
   // Short legal abbreviations (ЧСИ, МФО, ГК, ГПК) must remain searchable.
   // Match them only against the vetted registry keywords, not inferred laws.
   const ws=words(text).filter(x=>x.length>=3&&!STOP.has(x));
@@ -81,6 +83,12 @@ export function selectOfficialSources(sources,query,{max=5}={}){
     let score=0;
     for(const keyword of entry.keywords){
       const key=normalized(keyword);
+      // Abbreviations are legal standalone tokens, never fragments in
+      // ordinary words: 'упк' occurs inside 'покупка', 'ук' in 'продуктов'.
+      if(ABBREVIATIONS.has(key)){
+        if(exactWords.has(key))score+=8;
+        continue;
+      }
       if(text.includes(key))score+=key.includes(" ")?8:5;
       else if(key.includes(" ")&&words(key).length>0&&words(key).every(k=>
         ws.some(w=>w.startsWith(k))))score+=6;
