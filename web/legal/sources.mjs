@@ -13,7 +13,7 @@ function validDate(v){
 export function validateOfficialSource(raw){
   if(!raw||typeof raw!=="object"||Array.isArray(raw))
     throw Error("Official source must be a record");
-  if(!/^[a-z][a-z0-9-]{2,49}$/.test(raw.id||""))
+  if(!/^[a-z][a-z0-9-]{1,49}$/.test(raw.id||""))
     throw Error("Invalid official source ID");
   if(typeof raw.title!=="string"||raw.title.trim().length<10||
     raw.title.length>240)throw Error("Official source title required");
@@ -60,10 +60,12 @@ export function loadOfficialRegistry(file){
 function normalized(v){return String(v||"").toLowerCase().replace(/ё/g,"е")
   .replace(/\s+/g," ").trim().slice(0,10000);}
 const words=raw=>normalized(raw).match(/[\p{L}\p{N}]{3,}/gu)||[];
+const ABBREVIATIONS=new Set(["ук","упк","гк","гпк","чси","мфо","кск","пкб","гкб","мжд","коап","аппк"]);
 const STOP=new Set(["закона","законодательства","республики","казахстан","гражданский",
  "кодекс","статья","статьи","суд","срок","вопрос","какой","который","подготовь"]);
 export function selectOfficialSources(sources,query,{max=5}={}){
   const text=normalized(query);
+  const exactWords=new Set(text.match(/[\p{L}\p{N}]{2,}/gu)||[]);
   // Short legal abbreviations (ЧСИ, МФО, ГК, ГПК) must remain searchable.
   // Match them only against the vetted registry keywords, not inferred laws.
   const ws=words(text).filter(x=>x.length>=3&&!STOP.has(x));
@@ -74,10 +76,22 @@ export function selectOfficialSources(sources,query,{max=5}={}){
     // historical question or when the user asks about transition clauses.
     if(entry.id==="bank-law-1995"&&!/1995|202[0-5]|до 2026|стар(ый|ого|ые)|переходн|утратил сил/.test(text))
       continue;
+    // 2026 constitutional replacement: historic text is relevant only for
+    // earlier events/explicit comparisons, never by default as current law.
+    if(entry.id==="constitution-1995"&&!/1995|202[0-5]|до 2026|стар(ый|ого|ые)|историческ|переходн|ранее|до 1 июля/.test(text))
+      continue;
     let score=0;
     for(const keyword of entry.keywords){
       const key=normalized(keyword);
+      // Abbreviations are legal standalone tokens, never fragments in
+      // ordinary words: 'упк' occurs inside 'покупка', 'ук' in 'продуктов'.
+      if(ABBREVIATIONS.has(key)){
+        if(exactWords.has(key))score+=8;
+        continue;
+      }
       if(text.includes(key))score+=key.includes(" ")?8:5;
+      else if(key.includes(" ")&&words(key).length>0&&words(key).every(k=>
+        ws.some(w=>w.startsWith(k))))score+=6;
       else if(!key.includes(" ")&&ws.some(w=>w.startsWith(key)))score+=4;
     }
     const name=words(entry.title).filter(x=>x.length>=5&&!STOP.has(x));

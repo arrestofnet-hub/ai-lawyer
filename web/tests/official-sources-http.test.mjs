@@ -27,10 +27,10 @@ test("public legislation API exposes reviewed source pointers without claiming v
     const status=await (await fetch(base+"/legal/status")).json();
     assert.equal(status.ready,false,"empty legal article corpus must remain unverified");
     assert.equal(status.passages,0);
-    assert.equal(status.cataloguedActs,15);
+    assert.equal(status.cataloguedActs,36);
     assert.equal(status.catalogOnly,true);
     const all=await (await fetch(base+"/legal/sources")).json();
-    assert.equal(all.sources.length,15);
+    assert.equal(all.sources.length,36);
     assert.equal(all.verifiedArticles,0);
     assert.ok(all.sources.every(x=>x.reviewState==="catalogue_only"));
     const q=await (await fetch(base+"/legal/sources?q="+encodeURIComponent("ЧСИ арест"))).json();
