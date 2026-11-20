@@ -27,7 +27,7 @@ export function validateOfficialSource(raw){
     throw Error("Unverified law catalogue must not claim validated legal text");
   if(raw.language!=="ru")throw Error("Unsupported law catalogue language");
   if(!Array.isArray(raw.keywords)||!raw.keywords.length||raw.keywords.length>30||
-     raw.keywords.some(k=>typeof k!=="string"||k.trim().length<3||k.length>60))
+     raw.keywords.some(k=>typeof k!=="string"||k.trim().length<2||k.length>60))
     throw Error("Invalid law catalogue keywords");
   if(typeof raw.description!=="string"||raw.description.length<10||
     raw.description.length>320)throw Error("Invalid source description");
@@ -64,8 +64,10 @@ const STOP=new Set(["закона","законодательства","респ�
  "кодекс","статья","статьи","суд","срок","вопрос","какой","который","подготовь"]);
 export function selectOfficialSources(sources,query,{max=5}={}){
   const text=normalized(query);
-  const ws=words(text).filter(x=>x.length>3&&!STOP.has(x));
-  if(!ws.length)return [];
+  // Short legal abbreviations (ЧСИ, МФО, ГК, ГПК) must remain searchable.
+  // Match them only against the vetted registry keywords, not inferred laws.
+  const ws=words(text).filter(x=>x.length>=3&&!STOP.has(x));
+  if(text.length<2)return [];
   const hits=[];
   for(const entry of sources){
     // The 1995 bank law has a partial repeal: show it only for an explicitly
