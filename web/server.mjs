@@ -27,6 +27,8 @@ import {blankDossier,validateDossier,dossierView,dossierPromptContext} from "./l
 import {loadLegalCorpus,buildLegalContext,legalCorpusStatus} from "./legal/norms.mjs";
 import {loadOfficialRegistry,selectOfficialSources,sourcePointerContext,officialSourceStatus}
   from "./legal/sources.mjs";
+import {loadArticleSnapshots,retrieveArticleSnapshots,buildArticleSnapshotContext,
+  articleSnapshotStatus} from "./legal/snapshots.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -43,6 +45,8 @@ const legalPrivateFile=process.env.LEGAL_CORPUS_FILE||
 const localNorms=loadLegalCorpus(fs.existsSync(legalPrivateFile)
   ?legalPrivateFile:path.join(dirname,"legal","corpus.json"));
 const officialSources=loadOfficialRegistry(path.join(dirname,"legal","official-sources.json"));
+const officialArticleSnapshots=loadArticleSnapshots(
+  path.join(dirname,"legal","source-snapshots.json"),officialSources);
 // Unified Sol model for both free and future paid accounts. An explicit new
 // variable controls exceptions; legacy OPENAI_MODEL may still point to Astra
 // on older VPS installations, so intentionally do not inherit that setting.
@@ -360,6 +364,7 @@ async function askModel(payload) {
 function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
   const legalQuery=message+" "+(caseData.objective||"");
   const localNormContext=buildLegalContext(localNorms,legalQuery)+
+    buildArticleSnapshotContext(officialArticleSnapshots,legalQuery,{limit:3})+
     sourcePointerContext(officialSources,legalQuery,{max:4});
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs,
     { ...caseData, mode, localNormContext });
@@ -442,10 +447,22 @@ async function api(req,res,url) {
     })),count:matches.length,verifiedArticles:localNorms.length,
       note:"Это каталог официальных актов, а не проверенные тексты статей и редакций."});
   }
+  if(req.method==="GET"&&p==="/chat/api/legal/articles"){
+    const q=String(url.searchParams.get("q")||"").trim().slice(0,400);
+    const matches=q?retrieveArticleSnapshots(officialArticleSnapshots,q,{limit:5}):[];
+    return json(res,200,{articles:matches.map(x=>({
+      id:x.id,article:x.article,actId:x.actId,sourceUrl:x.canonicalUrl,
+      capturedFrom:x.capturedFrom,capturedOn:x.snapshotDate,ageDays:x.ageDays,
+      sha256:x.sha256,excerpt:x.text.slice(0,1700),
+      effectiveDateVerified:false,editionDateVerified:false
+    })),count:matches.length,
+      note:"Найдено в тексте официальной страницы. Дата действия редакции и применимость к прошлому делу не проверены."});
+  }
   if (req.method === "GET" && p === "/chat/api/legal/status") {
     return json(res,200,{...legalCorpusStatus(localNorms),
       ...officialSourceStatus(officialSources),
-      note:"Каталог источников не содержит подтверждённых цитат. Нормы сверяйте по официальным источникам и по дате события."});
+      ...articleSnapshotStatus(officialArticleSnapshots),
+      note:"Есть снимки отдельных статей из официального текста. Их дата выгрузки не равна дате вступления в силу; проверенные исторические редакции пока отсутствуют."});
   }
   if (req.method === "GET" && p === "/chat/api/session") {
     const user = sessionFor(req);
