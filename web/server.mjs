@@ -29,6 +29,7 @@ import {loadOfficialRegistry,selectOfficialSources,sourcePointerContext,official
   from "./legal/sources.mjs";
 import {loadArticleSnapshots,retrieveArticleSnapshots,buildArticleSnapshotContext,
   articleSnapshotStatus} from "./legal/snapshots.mjs";
+import {getLiveOfficialArticleContext} from "./legal/live-official.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -307,7 +308,7 @@ async function guestChat(req,res) {
     if (!process.env.OPENAI_API_KEY) fail(503,"Серверу не задан OPENAI_API_KEY");
     enforceFreeApiBudget();
     reserveGuestAttempt(req);
-    const result = await askModel(baseRequest(GUEST_CASE,guest.messages,message,[],mode,true,true));
+    const result = await askModel(await baseRequest(GUEST_CASE,guest.messages,message,[],mode,true,true));
     const previousMessages = guest.messages;
     const previousUsed=guest.used,previousDraft=guest.draftUsed;
     const previousCostCount=store.db.providerUsage?.length||0;
@@ -361,11 +362,12 @@ async function askModel(payload) {
   return { ...parsed, usage:data.usage || null,model:payload.model,
     webCalls:Array.isArray(data.output)?data.output.filter(x=>x.type==="web_search_call").length:0 };
 }
-function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
+async function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
   const legalQuery=message+" "+(caseData.objective||"");
   const matchingActs=selectOfficialSources(officialSources,legalQuery,{max:6})
     .map(x=>x.actId);
-  const localNormContext=buildLegalContext(localNorms,legalQuery)+
+  const liveNormContext=await getLiveOfficialArticleContext(officialSources,legalQuery);
+  const localNormContext=liveNormContext+buildLegalContext(localNorms,legalQuery)+
     buildArticleSnapshotContext(officialArticleSnapshots,legalQuery,{
       limit:3,relatedActIds:matchingActs
     })+
@@ -469,6 +471,7 @@ async function api(req,res,url) {
     return json(res,200,{...legalCorpusStatus(localNorms),
       ...officialSourceStatus(officialSources),
       ...articleSnapshotStatus(officialArticleSnapshots),
+      liveOfficialFetchingEnabled:process.env.LIVE_OFFICIAL_LAW_ENABLED!=="0",
       note:"Есть снимки отдельных статей из официального текста. Их дата выгрузки не равна дате вступления в силу; проверенные исторические редакции пока отсутствуют."});
   }
   if (req.method === "GET" && p === "/chat/api/session") {
@@ -760,7 +763,7 @@ async function api(req,res,url) {
     activeModelRequests.add(u.id);
     try {
     const history=store.db.messages.filter(m=>m.caseId===id);
-    const first=await askModel(baseRequest(c,history,message,docs,mode,balanceOf(u)!==null,u.accountType==="trial"));
+    const first=await askModel(await baseRequest(c,history,message,docs,mode,balanceOf(u)!==null,u.accountType==="trial"));
     let result=first,critiqueResult=null;
     if (["strategy","review"].includes(mode) && process.env.SECOND_PASS_ENABLED!=="0") {
       // An actual separate skeptical review, not a claim that one was conducted.
