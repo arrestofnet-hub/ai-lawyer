@@ -28,6 +28,15 @@ test("public legislation API exposes reviewed source pointers without claiming v
     assert.equal(status.ready,false,"empty legal article corpus must remain unverified");
     assert.equal(status.passages,0);
     assert.equal(status.cataloguedActs,36);
+    assert.equal(status.snapshotArticles,23);
+    assert.equal(status.snapshotLastCapture,"2026-11-20");
+    assert.equal(status.snapshotEditionsVerified,0);
+    const found=await (await fetch(base+"/legal/articles?q="+
+      encodeURIComponent("исполнительная надпись нотариуса"))).json();
+    assert.ok(Array.isArray(found.articles));
+    assert.match(found.note,/дата действия редакции/i);
+    assert.ok(found.articles.every(x=>x.editionDateVerified===false&&
+      x.effectiveDateVerified===false));
     assert.equal(status.catalogOnly,true);
     const all=await (await fetch(base+"/legal/sources")).json();
     assert.equal(all.sources.length,36);
