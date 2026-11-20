@@ -628,5 +628,155 @@
     "metadataCheckedAt": "2026-11-20",
     "reviewState": "catalogue_only",
     "lawTextVerified": false
+  },
+  {
+    "id": "constitution-2026",
+    "title": "Конституция Республики Казахстан, принятая на референдуме 15.03.2026, действует с 01.07.2026",
+    "actId": "K2600000000",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/K2600000000",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/K2600000000/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/K2600000000/info",
+    "language": "ru",
+    "keywords": [
+      "конституци",
+      "основн закон",
+      "конституционн прав",
+      "право на суд",
+      "конституционный суд",
+      "верховенств конституци",
+      "новая конституция"
+    ],
+    "description": "Конституция РК 2026: применяется с 1 июля 2026 года",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false,
+    "transition": "Принята 15.03.2026, вступила в силу 01.07.2026; до этой даты проверять действовавшую редакцию Конституции 1995 года."
+  },
+  {
+    "id": "constitution-1995",
+    "title": "Конституция Республики Казахстан 1995 года, прекратила действие с 01.07.2026",
+    "actId": "K950001000_",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/K950001000_",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/K950001000_/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/K950001000_/info",
+    "language": "ru",
+    "keywords": [
+      "конституци",
+      "основн закон",
+      "конституция 1995",
+      "старой конституции",
+      "конституционн прав"
+    ],
+    "description": "Исторические конституционные положения для юридических событий до 1 июля 2026 года",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false,
+    "transition": "Прекратила действие 01.07.2026. Не применять как действующую Конституцию после этой даты; сверять действовавшую на дату события редакцию."
+  },
+  {
+    "id": "cc-appk-2024",
+    "title": "О конституционности отдельных положений статей 124, 127, 171 АППК. Нормативное постановление Конституционного Суда от 10.01.2024 № 40-НП",
+    "actId": "S2400000040",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/S2400000040",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/S2400000040/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/S2400000040/info",
+    "language": "ru",
+    "keywords": [
+      "конституционн суд",
+      "аппк",
+      "конституционност",
+      "статья 127 аппк",
+      "денежн взыскан",
+      "процессуальн принужден"
+    ],
+    "description": "Конституционный контроль административных процессуальных мер",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "cc-upk-2026",
+    "title": "О конституционности отдельных положений статей 136, 140, 153, 342 УПК. Нормативное постановление Конституционного Суда от 10.06.2026 № 85-НП",
+    "actId": "S2600000085",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/S2600000085",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/S2600000085/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/S2600000085/info",
+    "language": "ru",
+    "keywords": [
+      "конституционн суд",
+      "упк",
+      "конституционност",
+      "статья 140 упк",
+      "уголовн процесс",
+      "арест имуществ"
+    ],
+    "description": "Конституционный контроль мер и процессуальных норм УПК",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "np-upk-art106",
+    "title": "О рассмотрении судами жалоб на действия (бездействие) и решения прокурора, органов уголовного преследования (статья 106 УПК). Нормативное постановление Верховного Суда № 3 от 27.06.2012",
+    "actId": "P120000003S",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/P120000003S",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/P120000003S/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/P120000003S/info",
+    "language": "ru",
+    "keywords": [
+      "упк",
+      "статья 106 упк",
+      "статья 106",
+      "следственн суд",
+      "бездействи следовател",
+      "жалоба на прокурора",
+      "полици"
+    ],
+    "description": "Судебный контроль в уголовном процессе по статье 106 УПК, с учётом изменений",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "amend-np-upk-2026",
+    "title": "О внесении изменений в нормативное постановление Верховного Суда № 3 от 27.06.2012 о жалобах по статье 106 УПК. Нормативное постановление 2026 года",
+    "actId": "P260000005S",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/P260000005S",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/P260000005S/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/P260000005S/info",
+    "language": "ru",
+    "keywords": [
+      "упк",
+      "статья 106",
+      "жалоба следственн суд",
+      "изменен нормативн постановлен",
+      "уголовн процесс",
+      "поправк упк"
+    ],
+    "description": "Поправки 2026 года к разъяснениям Верховного Суда по жалобам на уголовное преследование",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
+  },
+  {
+    "id": "amend-np-upk-2024",
+    "title": "О внесении изменений в некоторые нормативные постановления Верховного Суда по уголовному и уголовно-процессуальному законодательству. Нормативное постановление 2024 года",
+    "actId": "P240000006S",
+    "officialUrl": "https://adilet.zan.kz/rus/docs/P240000006S",
+    "historyUrl": "https://adilet.zan.kz/rus/docs/P240000006S/history",
+    "infoUrl": "https://adilet.zan.kz/rus/docs/P240000006S/info",
+    "language": "ru",
+    "keywords": [
+      "упк",
+      "ук",
+      "изменен постановлен",
+      "поправк",
+      "уголовн процесс",
+      "статья 106 упк"
+    ],
+    "description": "Изменяющий акт по уголовному и уголовно-процессуальному праву",
+    "metadataCheckedAt": "2026-11-20",
+    "reviewState": "catalogue_only",
+    "lawTextVerified": false
   }
 ]
