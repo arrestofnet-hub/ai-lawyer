@@ -32,7 +32,7 @@ import {loadArticleSnapshots,retrieveArticleSnapshots,buildArticleSnapshotContex
 import {getLiveOfficialArticleContext} from "./legal/live-official.mjs";
 import {getTimelineOfficialContext} from "./legal/historical.mjs";
 import {getNotarialCompanionContext} from "./legal/notary-procedure.mjs";
-import {buildLayIntakeContext,enrichLayLegalSearchQuery,qualifyUncertainPaymentDraft} from "./legal/issue-intake.mjs";
+import {buildLayIntakeContext,enrichLayLegalSearchQuery,qualifyUncertainPaymentDraft,removeUnsolicitedRevisionNotes} from "./legal/issue-intake.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -313,7 +313,7 @@ async function guestChat(req,res) {
     enforceFreeApiBudget();
     reserveGuestAttempt(req);
     const result = await askModel(await baseRequest(GUEST_CASE,guest.messages,message,[],mode,true,true));
-    result.text=qualifyUncertainPaymentDraft(message,result.text);
+    result.text=removeUnsolicitedRevisionNotes(message,qualifyUncertainPaymentDraft(message,result.text));
     const previousMessages = guest.messages;
     const previousUsed=guest.used,previousDraft=guest.draftUsed;
     const previousCostCount=store.db.providerUsage?.length||0;
@@ -797,7 +797,7 @@ async function api(req,res,url) {
       critiqueResult=critique;
       result={text:critique.text,sources:[...first.sources,...critique.sources.filter(s=>!first.sources.some(t=>t.url===s.url))]};
     }
-    result={...result,text:qualifyUncertainPaymentDraft(message,result.text)};
+    result={...result,text:removeUnsolicitedRevisionNotes(message,qualifyUncertainPaymentDraft(message,result.text))};
     const time=now();
     commitBilledAnswer(u,c,cost,()=>{
       recordProviderUsage(first,u,u.accountType==="trial");
