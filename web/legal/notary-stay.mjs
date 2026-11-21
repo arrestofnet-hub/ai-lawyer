@@ -32,6 +32,12 @@ export function parseCivilProcedureStayProvisions(html){
   const block=(n)=>blocks.find(x=>x.article===String(n))?.html||"";
   const b156=block(156),b157=block(157),b158=block(158);
   if(!b156||!b157||!b158)throw Error("GPK articles 156–158 not present");
+  // Article 157 on the official 2026 page has no heading anchor.
+  // Link to the first paragraph id (z1078 in that edition), not a
+  // fabricated #z157 fragment.
+  const first157Body=b157.slice(b157.indexOf("</p>")+4);
+  const article157Anchor=blocks.find(x=>x.article==="157")?.anchor||
+    first157Body.match(/<p\b[^>]*\bid=["'](z\d+)["']/i)?.[1]||null;
   const p156=paragraphs(b156);
   const clause=p156.find(x=>/^6\)\s*приостановление\s+взыскания\s+по\s+исполнительному\s+документу/iu.test(x)&&
     /оспариваемому\s+(?:ответчиком|должником)\s+в\s+судебном\s+порядке/iu.test(x));
@@ -57,7 +63,7 @@ export function parseCivilProcedureStayProvisions(html){
     throw Error("Relevant GPK procedure fragments missing");
   return {article156:clause,article157:filing+"\n"+decision,
     article158:delivery,urls:{
-      article156:GPK+"#z156",article157:GPK+"#z157",article158:GPK+"#z158"
+      article156:GPK+"#z156",article157:GPK+(article157Anchor?"#"+article157Anchor:""),article158:GPK+"#z158"
     }};
 }
 async function loadOfficial(url,fetchImpl){
