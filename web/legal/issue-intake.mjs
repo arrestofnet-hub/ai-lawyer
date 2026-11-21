@@ -81,7 +81,7 @@ export function qualifyUncertainPaymentDraft(query,answer){
 export function removeUnsolicitedRevisionNotes(query,answer){
   const input=String(query||"");
   const original=String(answer||"");
-  const explicitlyRevision=/(?:\bпредыдущ\p{L}*\s+(?:ответ|консультац)|\bпрошл\p{L}*\s+(?:ответ|консультац)|\bисправ\p{L}*\s+(?:свой|твой|предыдущ\p{L}*)\s*ответ|\bсравни\p{L}*\s+с\s+предыдущ\p{L}*\s+ответ)/iu.test(input);
+  const explicitlyRevision=/(?:предыдущ\p{L}*\s+(?:ответ|консультац)\p{L}*|прошл\p{L}*\s+(?:ответ|консультац)\p{L}*|исправ\p{L}*\s+(?:свой|твой|предыдущ\p{L}*)\s*ответ\p{L}*|сравни\p{L}*\s+с\s+предыдущ\p{L}*\s+ответ\p{L}*)/iu.test(input);
   if(explicitlyRevision)return original;
   return original
     .replace(/(^|\n)[ \t]*Уточнение к предыдущему ответу:\s*формулировка\s+«ранее я производил платежи»\s+была\s+слишком\s+категоричной\.[ \t]*/giu,"$1")
