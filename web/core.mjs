@@ -86,7 +86,9 @@ export class Store {
   publicDocument(d) { return { id:d.id, filename:d.filename, type:d.type, size:d.size, createdAt:d.createdAt }; }
   publicMessage(m) { return { id:m.id, role:m.role, text:m.text, mode:m.mode,
     ...(m.requestId?{requestId:m.requestId}:{}),
-    sources:m.sources || [], createdAt:m.createdAt }; }
+    sources:m.sources || [],
+    ...(Array.isArray(m.attachments)&&m.attachments.length?{attachments:m.attachments.slice(0,3)}:{}),
+    createdAt:m.createdAt }; }
 }
 
 export function classifyFile(filename, data) {

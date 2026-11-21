@@ -108,6 +108,14 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .composer{background:#fff;border-top:1px solid #e1e6ef;padding:12px max(16px,calc((100% - 850px)/2)) 17px}
 .modebar{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:9px}.modebar button{background:#f0f3f7;color:#36516f;border:1px solid #e0e6ed;border-radius:16px;padding:6px 12px;font-size:12px}.modebar button.selected{background:#d8e9fb;border-color:#75a7de}
 .composer textarea{min-height:76px;max-height:230px;resize:vertical;border-radius:14px}
+#guestUploadPanel{padding-top:8px}
+#guestUploadedList{display:flex;flex-wrap:wrap;gap:7px;padding-top:7px}
+.guest-file{display:flex;align-items:center;gap:6px;max-width:100%;border:1px solid #d5e0ed;border-radius:10px;padding:5px 8px;font-size:12px;background:#f8fbff}
+.guest-file label{display:flex;align-items:center;gap:5px;min-width:0}
+.guest-file .file-name{max-width:245px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+.guest-file button{border:0;background:transparent;color:#9a2634;padding:2px 4px;font-weight:600}
+.guest-file input[type=checkbox]{width:auto;margin:0}
+.guest-file-note{font-size:12px;color:#5b6982;padding-top:4px}
 .composer-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:8px}
 .inline-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 #docPanel{background:#fff;border-bottom:1px solid #e1e6ef;padding:9px 22px;display:none}
@@ -202,6 +210,14 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 <button type="button" data-mode="draft">Документ · 5 000 токенов</button>
 </div>
 <form id="messageForm"><textarea id="messageInput" placeholder="Опишите задачу по делу" aria-label="Сообщение" maxlength="14000" required></textarea>
+<div id="guestUploadPanel" hidden>
+  <div class="inline-tools">
+    <button type="button" class="secondary" id="guestAttachShortcut">📎 Прикрепить документ</button>
+    <input id="guestUploadInput" type="file" accept=".pdf,.docx,.png,.jpg,.jpeg,.webp,.txt,.md,.csv" multiple hidden aria-label="Выбрать документы для гостевого анализа">
+    <span class="guest-file-note" id="guestAttachmentHint">PDF, Word, фото или текст · до 3 файлов, суммарно до 1,5 МБ</span>
+  </div>
+  <div id="guestUploadedList" role="group" aria-label="Прикреплённые документы"></div>
+</div>
 <div class="composer-bottom"><div class="inline-tools" data-account><button type="button" class="secondary" id="attachShortcut" title="Прикрепить PDF, Word, изображение или текстовый файл">📎 Прикрепить</button><span class="small" id="selectedCount">Файлы не выбраны</span></div><button type="submit" class="primary" id="send">Отправить</button></div><div class="small" id="modeHint" role="status" style="padding-top:7px">Консультация — предварительный разбор. 1 500 внутренних токенов</div><div class="small" id="notice" role="status" style="padding-top:5px">AI может ошибаться. Проверяйте нормы, сроки и документы.</div>
 </form>
 </div>
