@@ -89,6 +89,6 @@ test("failed amended-law publication read fails closed and does not fabricate da
     actId:"Z970000155_",articleNumbers:["92-6","92-8"],priorHtml:archived,
     fetchImpl:async()=>{throw Error("network offline");}
   });
-  assert.match(context,/не указывать вычисленную дату/);
+  assert.match(context,/Не указывать вычисленную дату/);
   assert.doesNotMatch(context,/2019-02-03|2021-02-27/);
 });
