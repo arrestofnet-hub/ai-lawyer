@@ -27,6 +27,7 @@ import {
   randomId, classifyFile, extractOutput, modelResponseIsComplete, buildMessages, strategyInstruction,
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
+import {modelResponseSettings} from "./model-response-budget.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
 import {blankDossier,validateDossier,dossierView,dossierPromptContext} from "./legal/dossier.mjs";
 import {loadLegalCorpus,buildLegalContext,legalCorpusStatus} from "./legal/norms.mjs";
@@ -425,7 +426,10 @@ async function askModel(payload) {
   if (!modelResponseIsComplete(data)) {
     // The API may return non-empty text despite hitting max_output_tokens;
     // never store/export this partial text as a complete legal conclusion.
-    console.error("ai_model_incomplete",String(data?.incomplete_details?.reason||"unknown").slice(0,50));
+    console.error("ai_model_incomplete",
+      String(data?.incomplete_details?.reason||"unknown").slice(0,50),
+      Number(payload.max_output_tokens||0),
+      Number(data?.usage?.output_tokens||0));
     fail(503,"Юридический ответ не завершён полностью. Попробуйте ещё раз или сократите вопрос; неполный ответ не сохранён.");
   }
   const parsed = extractOutput(data);
@@ -455,11 +459,15 @@ async function baseRequest(caseData, history, message, docs, mode, creditAccount
   const provenanceInstruction=officialTextFetched
     ? "\nПРОВЕРКА ИСТОЧНИКОВ: Сервер уже получил тексты указанных норм с официальных страниц Әділет; они находятся в контексте ДЕЛО. НЕ утверждай, что у тебя нет доступа к их тексту, и НЕ выдавай их за результат лишь собственной памяти. Ссылайся на официальный URL каждого извлечённого положения. Не путай получение текста с подтверждением действия конкретной редакции в дату события. Когда в вопросе несколько дат, отдельно применяй нормы на каждую юридически значимую дату; не утверждай, что сноски и даты введения проверены, если они не получены."
     : "\nЕсли официальный текст в серверном контексте отсутствует, честно обозначь отсутствие подтверждённого текста.";
-  const needsDetailedAnswer=/(?:полноценн|подробн|полный\s+юридическ|проведи\s+(?:полный|юридический)|алгоритм\s+защит)/iu.test(message);
+  const responseSettings=modelResponseSettings({
+    message,mode,docCount:docs.length,creditAccount
+  });
   return {
     model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy+"\n\n"+practiceMethods+"\n\n"+
-      selectLegalPlaybooks(playbooks,message,caseData.summary),mode)+provenanceInstruction,
-    reasoning:{ effort:"medium" }, max_output_tokens:creditAccount?(mode==="consult"?(needsDetailedAnswer?5400:3300):5000):6500,
+      selectLegalPlaybooks(playbooks,message,caseData.summary),mode)+
+      provenanceInstruction+responseSettings.documentInstruction,
+    reasoning:responseSettings.reasoning,
+    max_output_tokens:responseSettings.max_output_tokens,
     ...(SEARCH_ENABLED ? { tools:[{ type:"web_search", search_context_size:"medium", filters:{ allowed_domains:["adilet.zan.kz","zan.gov.kz","gov.kz","sud.gov.kz","egov.kz"] } }] } : {}),
     input,
   };
