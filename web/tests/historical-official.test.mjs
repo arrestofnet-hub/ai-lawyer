@@ -24,7 +24,7 @@ test("official archive selected by modification date not later than case event",
 test("historical texts have archive links, edition caveat and selected date",async()=>{
   const urls=[];
   const x=await getHistoricalOfficialContext(notary,"Отмена исполнительной надписи нотариуса от 18.04.2024, сроки",{
-    asOf:"2026-11-21",fetchImpl:async(url,opts)=>{urls.push(url);return fixture(url,opts);}
+    asOf:"2026-11-21",publicationReview:false,fetchImpl:async(url,opts)=>{urls.push(url);return fixture(url,opts);}
   });
   assert.equal(x.historical,true);
   assert.deepEqual(urls,["https://old.adilet.zan.kz/rus/docs/Z970000155_/history","https://old.adilet.zan.kz/rus/archive/docs/Z970000155_/01.07.2023","https://old.adilet.zan.kz/rus/archive/docs/Z970000155_/05.07.2024"]);
@@ -38,19 +38,19 @@ test("historical texts have archive links, edition caveat and selected date",asy
 test("multiple dates refuse a fabricated operative revision without fetching",async()=>{
   let calls=0;
   const r=await getHistoricalOfficialContext(notary,"Нотариальная исполнительная надпись от 18.04.2024, вручение 18.05.2025",{
-    asOf:"2026-11-21",fetchImpl:async()=>{calls++;throw Error("should not fetch");}
+    asOf:"2026-11-21",publicationReview:false,fetchImpl:async()=>{calls++;throw Error("should not fetch");}
   });
   assert.equal(r.historical,true);assert.equal(calls,0);assert.match(r.context,/несколько дат либо указан только год/);
 });
 test("archive failure never substitutes present-day law for historic event",async()=>{
   const r=await getHistoricalOfficialContext(notary,"Нотариальная исполнительная надпись 18.04.2024",{
-    asOf:"2026-11-21",fetchImpl:async()=>{throw Error("network");}
+    asOf:"2026-11-21",publicationReview:false,fetchImpl:async()=>{throw Error("network");}
   });
   assert.equal(r.historical,true);assert.match(r.context,/ИСТОРИЧЕСКАЯ ПРОВЕРКА НЕ ЗАВЕРШЕНА/);
 });
 test("undated question stays on regular official live path",async()=>{
   const r=await getHistoricalOfficialContext(notary,"Отмена исполнительной надписи нотариуса сегодня",{
-    asOf:"2026-11-21",fetchImpl:async()=>{throw Error("should not fetch");}
+    asOf:"2026-11-21",publicationReview:false,fetchImpl:async()=>{throw Error("should not fetch");}
   });
   assert.equal(r.historical,false);
 });
