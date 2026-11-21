@@ -77,7 +77,7 @@ async function downloadExport(caseId,messageId,format,button) {
   } catch(e) {showError(e.message);}
   finally {button.disabled=false;button.textContent=original;}
 }
-const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(),
+const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(), guestDocIds:new Set(),guestUploadBusy:false,
   busy:false, registered:false, awaitingCode:false, signupMode:"invite",
   legacyInviteVisible:false, googleEnabled:false, googleSignupEnabled:false, dailyLimit:0,balance:null,
   pendingRequest:null,packages:[],
@@ -180,8 +180,49 @@ function openAuth(register,{reminder=false}={}) {
   $("#closeAuth").hidden=!guest||(!guestHasAccess(guest)&&!guest.messages?.length);
   if(!dialog.open)dialog.showModal();
 }
+function renderGuestDocuments(){
+  const list=$("#guestUploadedList");
+  list.replaceChildren();
+  const docs=state.guest?.documents||[];
+  const selected=state.guestDocIds;
+  const total=docs.reduce((sum,d)=>sum+d.size,0);
+  $("#guestAttachmentHint").textContent=
+    "PDF, Word, фото или текст · "+docs.length+" из 3 файлов · "+
+    (total/1024/1024).toFixed(2)+" / 1,43 МБ";
+  $("#guestAttachShortcut").disabled=state.busy||state.guestUploadBusy||docs.length>=3;
+  for(const d of docs){
+    const chip=document.createElement("div");chip.className="guest-file";
+    const label=document.createElement("label");label.title=d.filename;
+    const check=document.createElement("input");check.type="checkbox";check.checked=selected.has(d.id);
+    check.disabled=state.busy||state.guestUploadBusy;
+    check.addEventListener("change",()=>{
+      if(check.checked)state.guestDocIds.add(d.id);
+      else state.guestDocIds.delete(d.id);
+      state.pendingRequest=null;
+    });
+    const name=document.createElement("span");name.className="file-name";name.textContent=d.filename;
+    label.append(check,name);
+    const remove=document.createElement("button");remove.type="button";remove.textContent="×";
+    remove.title="Удалить гостевой файл";remove.setAttribute("aria-label","Удалить "+d.filename);
+    remove.disabled=state.busy||state.guestUploadBusy;
+    remove.addEventListener("click",async()=>{
+      if(state.busy||state.guestUploadBusy)return;
+      state.guestUploadBusy=true;renderGuestDocuments();
+      try{
+        const updated=await request("/guest/documents/"+encodeURIComponent(d.id),{method:"DELETE"});
+        state.guestDocIds.delete(d.id);state.pendingRequest=null;
+        updateGuest(updated);
+      }catch(e){showError(e.message);}
+      finally{state.guestUploadBusy=false;renderGuestDocuments();}
+    });
+    chip.append(label,remove);list.append(chip);
+  }
+}
+
 function updateGuest(guest) {
   state.guest=guest;
+  const availableIds=new Set((guest.documents||[]).map(d=>d.id));
+  state.guestDocIds=new Set([...state.guestDocIds].filter(id=>availableIds.has(id)));
   // An unused document bonus remains available after the last consultation.
   if(!guestCanSend(guest,state.mode)) {
     if(guest.remaining>0)state.mode="consult";
@@ -191,18 +232,20 @@ function updateGuest(guest) {
     " · до 10 консультаций и 1 документа"+(guest.restriction?" · "+guest.restriction:"");
   $("#guestWelcome").hidden=guest.messages.length>0;
   $("#messages").hidden=!guest.messages.length;
-  $("#send").disabled=state.busy||!guestCanSend(guest);
+  $("#send").disabled=state.busy||state.guestUploadBusy||!guestCanSend(guest);
   $("#messageInput").disabled=!guestCanSend(guest);
   $("#modeHint").textContent=state.mode==="draft"
     ? "Документ · "+formatCount(guest.documentTokenCost)+" токенов. После ответа доступны Word и PDF."
     : "Консультация · "+formatCount(guest.tokenCost)+" токенов. Один документ стоит "+formatCount(guest.documentTokenCost)+".";
   syncGuestModeButtons(guest);
+  renderGuestDocuments();
   renderMessages();
 }
 function guestView(guest) {
   state.user=null;
   state.current=null;
   state.docIds.clear();
+  state.guestDocIds=new Set((guest.documents||[]).map(d=>d.id));
   state.mode=guest.remaining>0 ? "consult" : guest.documentRemaining>0 ? "draft" : "consult";
   $("#guestModes").hidden=false;
   document.body.classList.add("guest-mode");
@@ -214,6 +257,7 @@ function guestView(guest) {
   $("#caseTitle").textContent="Гостевой чат";
   $("#messageInput").placeholder="Задайте юридический вопрос";
   $("#docPanel").style.display="none";
+  $("#guestUploadPanel").hidden=false;
   $("#summaryPanel").style.display="none";
   $("#empty").style.display="none";
   $("#composer").hidden=false;
@@ -358,6 +402,8 @@ async function boot() {
       return;
     }
     state.guest=null;
+    state.guestDocIds.clear();
+    $("#guestUploadPanel").hidden=true;
     $("#guestModes").hidden=true;
     document.body.classList.remove("guest-mode");
     $("#guestWelcome").hidden=true;
@@ -431,6 +477,11 @@ function renderMessages() {
     block.append(msg.role==="assistant"?formattedAnswer(msg.text):(()=>{
       const txt=document.createElement("div");txt.textContent=msg.text;return txt;
     })());
+    if(msg.role==="user"&&Array.isArray(msg.attachments)&&msg.attachments.length){
+      const names=document.createElement("div");names.className="meta";
+      names.textContent="📎 "+msg.attachments.join(", ");
+      block.append(names);
+    }
     if(msg.sources?.length) {
       const src=document.createElement("div");src.className="sources";
       const title=document.createElement("b");title.textContent="Источники поиска:";src.append(title);
