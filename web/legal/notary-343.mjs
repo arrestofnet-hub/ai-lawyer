@@ -25,7 +25,7 @@ export function verifyNotarialAmendment343(lawHtml,infoHtml){
   if(!body)throw Error("Full official law text missing");
   const paragraphs=[...body.matchAll(/<p\b[^>]*>[\s\S]*?<\/p>/gi)]
     .map(x=>plain(x[0]));
-  const position=paragraphs.findIndex(p=>/^37\)\s+в\s+статье\s+92-8:/iu.test(p));
+  const position=paragraphs.findIndex(p=>/^37\)\s+в\s+статье\s+92-8\s*:/iu.test(p));
   if(position<1)throw Error("Article 92-8 amendment not found");
   const change=paragraphs.slice(position,position+4).join("\n");
   if(!/пункт\s+1\s+дополнить\s+частью\s+второй/iu.test(change)||
@@ -34,7 +34,7 @@ export function verifyNotarialAmendment343(lawHtml,infoHtml){
     throw Error("Article 92-8 change not matched precisely");
   // Verify this is under point 3 of Article 1 (the amendment to the
   // Notaries Act), not an identically numbered item in another law.
-  const preceding=paragraphs.slice(Math.max(0,position-40),position).join(" ");
+  const preceding=paragraphs.slice(0,position).join(" ");
   if(!/3\.\s+В\s+Закон\s+Республики\s+Казахстан\s+от\s+14\s+июля\s+1997\s+года/iu.test(preceding)||
      !/О\s+нотариате/iu.test(preceding))
     throw Error("Amendment's target act and point 3 not verified");
