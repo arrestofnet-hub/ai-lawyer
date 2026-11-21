@@ -90,9 +90,11 @@ export function numberedExportBlocks(markdown){
     if(["heading","rule","table","code","quote","bullets"].includes(block.kind)){
       counter=0;
     }else if(block.kind==="paragraph"){
-      const text=String(block.text||"").trim();
-      if(!/^(?:(?:Источник(?:ы)?|Норма|Статья|ГПК|НП\s+ВС|См\.|Ссылка)(?:\b|\s|:)|https?:\/\/)/iu.test(text))
-        counter=0;
+      // Explanatory paragraphs often sit between numbered actions in one
+      // section: e.g. "1. Ask Kaspi", "Clarify the order", "1. Ask the
+      // bailiff". A paragraph isn't a new list/section boundary; only a
+      // structural heading, table, rule or a different list kind resets it.
+      // Keep numbers continuous until a new structural section begins.
     }
     return block;
   });
