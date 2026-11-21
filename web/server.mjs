@@ -832,7 +832,7 @@ async function api(req,res,url) {
 async function sendExportResponse(req,res,message,format) {
   if(format!=="pdf" && format!=="docx") fail(400,"Поддерживаются Word (.docx) и PDF");
   rateLimit(req,"export",25,60*60*1000);
-  const bytes=format==="pdf" ? await exportPdf(message.text) : await exportDocx(message.text);
+  const bytes=format==="pdf" ? await exportPdf(message.text,{sources:message.sources||[]}) : await exportDocx(message.text,{sources:message.sources||[]});
   const type=format==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   res.writeHead(200,{
     "content-type":type,

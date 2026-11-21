@@ -2,11 +2,12 @@
 // Only the authenticated case owner can invoke these from server.mjs.
 import fs from "node:fs";
 import {
-  Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+  Document, Packer, Paragraph, TextRun, ExternalHyperlink, Table, TableRow, TableCell,
   WidthType
 } from "docx";
 import { PDFDocument } from "pdfkit";
 import { parseLegalMarkdown, inlineTokens, plainText } from "./format.mjs";
+import {officialExportReferences} from "./legal/export-references.mjs";
 
 const cm=28.3464566929;
 const wordMargin={left:1701,right:567,top:1417,bottom:1134};
@@ -22,7 +23,7 @@ function p(text,{bold=false,indent=true,after=115}={}) {
     spacing:{line:322,after}, indent:indent?{firstLine:709}:undefined,
   });
 }
-export async function exportDocx(markdown) {
+export async function exportDocx(markdown,{sources=[]}={}) {
   const blocks=parseLegalMarkdown(markdown);
   const content=[];
   for(const block of blocks) {
@@ -42,11 +43,29 @@ export async function exportDocx(markdown) {
       }));
       content.push(new Table({rows,width:{size:100,type:WidthType.PERCENTAGE}}));
       content.push(p("",{indent:false,after:60}));
+    } else if(block.kind==="rule") {
+      content.push(p("",{indent:false,after:50}));
     } else if(block.kind==="code"||block.kind==="quote") {
       content.push(p(block.text,{indent:false}));
     } else {
       const parts=block.text.split("\n");
       parts.forEach((part,i)=>content.push(p(part,{indent:i===0,after:i===parts.length-1?115:0})));
+    }
+  }
+  const officialRefs=officialExportReferences(markdown,sources);
+  if(officialRefs.length){
+    content.push(p("Официальные источники для сверки редакции:",{indent:false,bold:true,after:55}));
+    content.push(p("Приведены справочно; дата действия каждой нормы определяется отдельно.",{indent:false,after:55}));
+    for(const r of officialRefs){
+      content.push(new Paragraph({
+        children:[
+          new TextRun({text:r.label+": ",font:"Times New Roman",size:22}),
+          new ExternalHyperlink({children:[
+            new TextRun({text:r.url,style:"Hyperlink",font:"Times New Roman",size:22})
+          ],link:r.url})
+        ],
+        spacing:{line:280,after:70}
+      }));
     }
   }
   if(!content.length)content.push(p("Документ пуст.",{indent:false}));
@@ -81,7 +100,7 @@ function fontPath(override,candidates) {
   if(override && fs.existsSync(override))return override;
   return candidates.find(p=>fs.existsSync(p));
 }
-export async function exportPdf(markdown) {
+export async function exportPdf(markdown,{sources=[]}={}) {
   const normal=fontPath(process.env.PDF_FONT_REGULAR,regularFontCandidates);
   if(!normal) {
     const err=new Error("Для создания PDF на сервере нужно установить шрифты с поддержкой кириллицы: fonts-dejavu-core");
@@ -145,8 +164,38 @@ export async function exportPdf(markdown) {
       block.items.forEach((t,i)=>sectionText(t,{prefix:block.kind==="ordered"?(i+1)+". ":"• "}));
     }
     else if(block.kind==="table")drawTable(block);
+    else if(block.kind==="rule"){
+      ensurePage(16);
+      pdf.moveDown(0.25);
+      pdf.lineWidth(0.35).strokeColor("#aaaaaa")
+        .moveTo(marginLeft,pdf.y).lineTo(marginLeft+usableWidth,pdf.y).stroke();
+      pdf.moveDown(0.3);
+    }
     else if(block.kind==="code"||block.kind==="quote")sectionText(block.text,{size:12});
     else block.text.split("\n").forEach((line,i)=>sectionText(line,{indent:i===0}));
+  }
+  const officialRefs=officialExportReferences(markdown,sources);
+  if(officialRefs.length){
+    ensurePage(85);
+    pdf.moveDown(0.6);
+    pdf.font("bold").fontSize(11).fillColor("#151515")
+      .text("Официальные источники для сверки редакции",marginLeft,pdf.y,{
+        width:usableWidth,align:"left"
+      });
+    pdf.moveDown(0.22);
+    pdf.font("main").fontSize(9).fillColor("#151515")
+      .text("Ссылки указаны справочно. Дату действия редакции необходимо проверить отдельно.",{
+        width:usableWidth,align:"left"
+      });
+    pdf.moveDown(0.25);
+    for(const item of officialRefs){
+      ensurePage(50);
+      pdf.font("main").fontSize(10).fillColor("#151515");
+      pdf.text(item.label+": "+item.url,marginLeft,pdf.y,{
+        width:usableWidth,align:"left",lineGap:1,link:item.url
+      });
+      pdf.moveDown(0.16);
+    }
   }
   pdf.end();
   return output;
