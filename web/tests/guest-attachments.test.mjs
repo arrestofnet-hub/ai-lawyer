@@ -16,6 +16,9 @@ test("guest uploads, Sol receives PDF, and registration retains encrypted attach
     "  if(url!=='https://api.openai.com/v1/responses')throw Error('unexpected outbound '+url);",
     "  const body=JSON.parse(opts.body);",
     "  const inputs=body.input.at(-1).content.filter(x=>x.type==='input_file');",
+    "  const prompt=body.input.at(-1).content[0].text;",
+    "  const required=prompt.includes('все три страницы')?12500:9500;",
+    "  if(inputs.length&&body.max_output_tokens<required)throw Error('Document response budget too small');",
     "  if(inputs.some(x=>!x.file_data.startsWith('data:application/pdf;base64,')||",
     "    !Buffer.from(x.file_data.split(',')[1],'base64').toString('utf8').startsWith('%PDF-'))) ",
     "    throw Error('bad PDF bytes');",
@@ -97,7 +100,7 @@ test("guest uploads, Sol receives PDF, and registration retains encrypted attach
     const requestId=crypto.randomUUID();
     const chat=await call("/guest/chat",{
       cookie,method:"POST",
-      data:{message:"Прочитай приложенный файл целиком",
+      data:{message:"Прочитай все три страницы приложенного файла полностью",
         mode:"consult",docIds:[doc.id],requestId}
     });
     assert.equal(chat.status,200);
@@ -107,13 +110,13 @@ test("guest uploads, Sol receives PDF, and registration retains encrypted attach
     assert.equal(answered.tokenBalance,18500);
     const duplicate=await call("/guest/chat",{
       cookie,method:"POST",
-      data:{message:"Прочитай приложенный файл целиком",
+      data:{message:"Прочитай все три страницы приложенного файла полностью",
         mode:"consult",docIds:[doc.id],requestId}
     });
     assert.equal((await duplicate.json()).alreadyProcessed,true);
     const changed=await call("/guest/chat",{
       cookie,method:"POST",
-      data:{message:"Прочитай приложенный файл целиком",
+      data:{message:"Прочитай все три страницы приложенного файла полностью",
         mode:"consult",docIds:[],requestId}
     });
     assert.equal(changed.status,409,"retry id ties to document IDs");
