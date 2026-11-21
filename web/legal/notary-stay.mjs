@@ -39,7 +39,7 @@ export function parseCivilProcedureStayProvisions(html){
   const filing=p157.find(x=>/^1\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
     /в\s+день\s+(?:вынесения\s+определения\s+о\s+возбуждении|его\s+поступления)/iu.test(x));
   const decision=p157.find(x=>/^2\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
-    /без\s+извещения\s+лиц/iu.test(x)&&/вынес[а-яё]+\s+определение/iu.test(x));
+    /без\s+извещения\s+лиц/iu.test(x)&&/(?:выносит|вынес[а-яё]+)\s+определение/iu.test(x));
   const p158=paragraphs(b158);
   const delivery=p158.find(x=>/^2\)\s*в\s+соответствующий\s+орган\s+юстиции\s+либо\s+в\s+региональную\s+палату/iu.test(x)&&
     /приостановления\s+исполнительного\s+производства/iu.test(x)&&
