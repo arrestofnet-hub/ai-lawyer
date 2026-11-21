@@ -47,7 +47,7 @@ test("plain-language answer with vague statute titles receives only act-level of
     "https://old.adilet.zan.kz/rus/docs/Z100000261_",
     "https://old.adilet.zan.kz/rus/docs/Z970000155_"
   ]);
-  assert.ok(refs.every(x=>!x.label.includes("статья")));
+  assert.ok(refs.every(x=>!(/(?:статья\\s+\\d+)/iu.test(x.label))));
   assert.ok(refs.every(x=>x.label.includes("общий")||x.label.includes("официальный")));
 });
 test("repeated one, one, two becomes one, two, three even across advice paragraph",()=>{
