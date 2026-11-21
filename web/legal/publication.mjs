@@ -18,7 +18,7 @@ function iso(s){
   const x=new Date(v+"T00:00:00Z");
   return Number.isFinite(x.getTime())&&x.toISOString().slice(0,10)===v?v:null;
 }
-function addDays(ymd,days){
+export function addDays(ymd,days){
   const date=new Date(ymd+"T00:00:00Z");
   date.setUTCDate(date.getUTCDate()+days);
   return date.toISOString().slice(0,10);
@@ -76,7 +76,7 @@ export function parseAmendingLawEnactment(actHtml,{actId}={}){
     textSha256:crypto.createHash("sha256").update(excerpt,"utf8").digest("hex")
   };
 }
-async function fetchOfficialLaw(url,fetchImpl){
+export async function fetchOfficialLaw(url,fetchImpl){
   const u=new URL(url);
   if(u.protocol!=="https:"||u.hostname!=="old.adilet.zan.kz"||u.port||
      u.username||u.password||u.search||u.hash||

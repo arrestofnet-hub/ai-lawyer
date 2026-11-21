@@ -51,7 +51,7 @@ test("live official context brings current notarial clause and separate GPK/VS c
   const seen=[];
   const text=await getNotarialCompanionContext(laws,
     "Отмена исполнительной надписи нотариуса: статья 92-8, ГПК 364 и НП ВС №6",{
-      asOf:"2026-11-21",fetchImpl:async(url,opts)=>{
+      asOf:"2026-11-21",verify343:false,fetchImpl:async(url,opts)=>{
         seen.push(url);assert.equal(opts.redirect,"error");
         assert.match(url,/^https:\/\/old\.adilet\.zan\.kz\/rus\/docs\//);
         return new Response(sourceFor(url),{
@@ -72,7 +72,7 @@ test("live official context brings current notarial clause and separate GPK/VS c
 test("unavailable court resolution fails closed, but independently retrieved statutes remain usable",async()=>{
   const text=await getNotarialCompanionContext(laws,
     "Исполнительная надпись нотариуса",{
-      asOf:"2026-11-21",fetchImpl:async(url)=>{
+      asOf:"2026-11-21",verify343:false,fetchImpl:async(url)=>{
         if(url.endsWith("/P220000006S"))throw Error("not available");
         return new Response(sourceFor(url),{headers:{"content-type":"text/html"}});
       }

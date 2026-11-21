@@ -3,6 +3,7 @@
 // supplements but must never replace the archived version for earlier acts.
 import crypto from "node:crypto";
 import {getLiveOfficialArticleContext} from "./live-official.mjs";
+import {getNotarial343Context} from "./notary-343.mjs";
 
 const MAX_BYTES=2300000;
 function textOf(html){
@@ -51,7 +52,7 @@ async function fetchCourtResolution(id,fetchImpl){
     "\n"+paragraphs.map((p,i)=>"Пункт-фрагмент "+(i+1)+": "+p).join("\n");
 }
 export async function getNotarialCompanionContext(registry,question,{
-  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10)
+  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10),verify343=true
 }={}){
   if(process.env.LIVE_OFFICIAL_LAW_ENABLED==="0"||
      !isNotarialInscriptionQuestion(question))return "";
@@ -61,17 +62,19 @@ export async function getNotarialCompanionContext(registry,question,{
   const jobs=[
     notary?getLiveOfficialArticleContext([notary],"статья 92-8 о нотариате",{fetchImpl,asOf}):Promise.resolve(""),
     gpk?getLiveOfficialArticleContext([gpk],"ГПК статья 364 нотариальное действие",{fetchImpl,asOf}):Promise.resolve(""),
-    court?fetchCourtResolution(court.actId,fetchImpl).catch(()=>"\nНП ВС № 6: полный текст судебных разъяснений сейчас не получен. Официальный адрес: https://old.adilet.zan.kz/rus/docs/P220000006S. НЕ утверждай проверку точного срока по этому источнику."):Promise.resolve("")
+    court?fetchCourtResolution(court.actId,fetchImpl).catch(()=>"\nНП ВС № 6: полный текст судебных разъяснений сейчас не получен. Официальный адрес: https://old.adilet.zan.kz/rus/docs/P220000006S. НЕ утверждай проверку точного срока по этому источнику."):Promise.resolve(""),
+    verify343?getNotarial343Context({fetchImpl,asOf}):Promise.resolve("")
   ];
-  const [currentNotary,gpkArticle,courtExcerpt]=await Promise.all(jobs.map(p=>p.catch(()=>'')));
+  const [currentNotary,gpkArticle,courtExcerpt,effect343]=await Promise.all(jobs.map(p=>p.catch(()=>'')));
   return ("\nДОПОЛНИТЕЛЬНЫЕ ПРОЦЕССУАЛЬНЫЕ ИСТОЧНИКИ ПО ИСПОЛНИТЕЛЬНОЙ НАДПИСИ.\n"+
     "Следующие тексты запрошены отдельно от архивного анализа, поскольку вопросы совершения нотариального действия и обращения в суд могут относиться к разным датам. "+
     "Проверь историческую применимость, процессуальное исчисление и переходные положения. "+
     "В особенности разграничивай 10 РАБОЧИХ дней для возражения нотариусу и отдельный судебный срок; не считай их одним сроком.\n"+
+    (effect343?"\n"+effect343+"\n":"\nЗакон № 343-VIII — проверка точного срока не состоялась.\n")+
     (currentNotary?"\nЗАКОН О НОТАРИАТЕ — ТЕКСТ ОФИЦИАЛЬНОЙ СТРАНИЦЫ НА ДАТУ ЗАГРУЗКИ (не редакция 2024 года):\n"+
       currentNotary.slice(0,6400):"\nАктуальный текст статьи 92-8 не получен; не выдавай его за проверенный.")+
     (gpkArticle?"\nГПК РК — СТАТЬЯ 364, ТЕКСТ С ОФИЦИАЛЬНОЙ СТРАНИЦЫ:\n"+
       gpkArticle.slice(0,4800):"\nТекст статьи 364 ГПК не получен; не утверждай проверку её срока.")+
     (courtExcerpt?"\n"+courtExcerpt.slice(0,4600):"\nТекст НП ВС № 6 не получен; не утверждай проверку его положений.")
-  ).slice(0,15000);
+  ).slice(0,17500);
 }
