@@ -45,16 +45,24 @@ export function parseOfficialArticles(html,articleNumbers){
   }
   return found;
 }
+export function isCivilAssignmentQuestion(query){
+  return /(?:уступк\p{L}*\s+(?:права\s+)?требован\p{L}*|переход\p{L}*\s+прав\p{L}*\s+(?:требован\p{L}*|кредитор\p{L}*)|цессия|нов\p{L}*\s+кредитор\p{L}*|право\s+требования\s+перешло|реестр\p{L}*\s+передаваем\p{L}*\s+требован\p{L}*)/iu.test(String(query||""));
+}
 export function specificNumbers(query,source){
   const nums=new Set();
   const re=/(?:стат(?:ья|ьи|ью|ье|ей)|ст\.)\s*№?\s*(\d{1,4}(?:-\d{1,2})?)/giu;
   for(const m of String(query).matchAll(re))nums.add(m[1]);
+  if(source.id==="gk-general"&&isCivilAssignmentQuestion(query)){
+    // Verified subject-area navigation, not a claim that current or
+    // historical article texts have already been fetched or checked.
+    for(const num of ["339","341","342","343","345","346"])nums.add(num);
+  }
   // The user may ask about "grounds and deadlines of cancelling an
   // executive inscription" without knowing the relevant article numbers.
   if(source.id==="notary"&&/исполнител\p{L}{0,10}\s+надпис|надпис.{0,20}нотари/iu.test(query)){
     nums.add("92-6");nums.add("92-8");
   }
-  return [...nums].slice(0,4);
+  return [...nums].slice(0,source.id==="gk-general"?7:4);
 }
 function officialPageUrl(source,host){
   const u=new URL(source.officialUrl);
@@ -73,7 +81,7 @@ async function fetchPage(url,fetchImpl){
   if(cached&&cached.until>Date.now())return cached.text;
   const response=await fetchImpl(url,{method:"GET",redirect:"error",
     headers:{accept:"text/html,application/xhtml+xml"},
-    signal:AbortSignal.timeout(7000)});
+    signal:AbortSignal.timeout(url.includes("K940001000_")?12000:7000)});
   if(!response.ok||!/text\/html|application\/xhtml\+xml/i.test(response.headers.get("content-type")||""))
     throw Error("Official page unavailable");
   const declared=Number(response.headers.get("content-length")||0);
@@ -97,8 +105,15 @@ export async function getLiveOfficialArticleContext(officialRegistry,query,{
   fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10)
 }={}){
   if(process.env.LIVE_OFFICIAL_LAW_ENABLED==="0")return "";
-  const matched=selectProvisionSources(officialRegistry,query,{max:3});
-  const jobs=matched.map(source=>({source,numbers:specificNumbers(query,source)}))
+  const matched=selectProvisionSources(officialRegistry,query,{max:5});
+  const gk=officialRegistry.find(x=>x.id==="gk-general");
+  if(gk&&isCivilAssignmentQuestion(query)){
+    // The substantive-law question belongs to GK General Part even if
+    // a user also mentions a loan (GK Special Part), penalties or court.
+    matched.unshift(gk);
+  }
+  const unique=[...new Map(matched.map(source=>[source.id,source])).values()];
+  const jobs=unique.map(source=>({source,numbers:specificNumbers(query,source)}))
     .filter(x=>x.numbers.length).slice(0,1);
   if(!jobs.length)return "";
   const {source,numbers}=jobs[0];
@@ -127,5 +142,5 @@ export async function getLiveOfficialArticleContext(officialRegistry,query,{
       "; SHA256: "+x.sha256+"; дата загрузки: "+asOf+
       "; редакция/вступление в силу НЕ подтверждены.\n"+x.text).join("\n\n")+
     (missing.length?"\nНе удалось получить полный текст статей: "+missing.join(", ")+". Не цитировать их как проверенные.":"")
-  ).slice(0,15000);
+  ).slice(0,source.id==="gk-general"?19000:15000);
 }

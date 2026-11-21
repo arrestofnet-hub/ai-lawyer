@@ -3,11 +3,12 @@
 // this is NOT proof that a given edition was operative on the facts' date.
 const ACT_BASE="https://old.adilet.zan.kz/rus/docs/";
 const GPK="K1500000377";
+const GK_GENERAL="K940001000_";
 const NOTARY="Z970000155_";
 const ENFORCEMENT="Z100000261_";
 const NP="P220000006S";
 const AMEND="Z2600000343";
-const TRUSTED=/^https:\/\/(?:old\.)?adilet\.zan\.kz\/rus\/docs\/[A-Za-z0-9_]{6,32}(?:#[A-Za-z0-9_-]{1,40})?$/u;
+const TRUSTED=/^https:\/\/(?:old\.)?adilet\.zan\.kz\/rus\/docs\/[A-Za-z0-9_]{6,32}(?:\/history|#[A-Za-z0-9_-]{1,40})?$/u;
 export function officialExportReferences(markdown, modelSources=[]){
   const text=String(markdown||"");
   const refs=[];
@@ -18,10 +19,21 @@ export function officialExportReferences(markdown, modelSources=[]){
   };
   // References appear ONLY when the actual model text names the source.
   // Do not add a normative reference simply because the user has an active case.
+  const mentionsGk=/(?<![\p{L}\p{N}])ГК(?:\s+РК)?(?![\p{L}\p{N}])|гражданск\p{L}*\s+кодекс\p{L}*\s+(?:Республики\s+Казахстан|РК)?/iu.test(text);
+  if(mentionsGk){
+    const relevant=["339","340","341","342","343","344","345","346","347"];
+    const cited=relevant.filter(number=>
+      new RegExp("(?<!\\d)"+number+"(?!\\d)","u").test(text));
+    add("ГК РК (Общая часть)"+(cited.length
+      ?", статьи "+cited.join(", ")+" — официальный текст для сверки"
+      :" — общий официальный текст"),ACT_BASE+GK_GENERAL);
+    if(/(?:редакци\p{L}*|истори\p{L}*|март\p{L}*\s+2025|апрел\p{L}*\s+2025)/iu.test(text))
+      add("ГК РК (Общая часть) — история редакций, проверить применимость к событиям",ACT_BASE+GK_GENERAL+"/history");
+  }
   const mentionsGpk=/(?<![\p{L}\p{N}])ГПК(?![\p{L}\p{N}])|гражданск\p{L}*\s+процессуал\p{L}*\s+кодекс/iu.test(text);
   if(mentionsGpk){
     const before=refs.length;
-    for(const [number,fragment] of [["156","#z156"],["157",""],["158","#z158"],["364","#z364"]]){
+    for(const [number,fragment] of [["72",""],["156","#z156"],["157",""],["158","#z158"],["364","#z364"]]){
       if(new RegExp("(?<!\\d)"+number+"(?!\\d)","u").test(text))
         add("ГПК РК, статья "+number,ACT_BASE+GPK+fragment);
     }
