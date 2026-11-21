@@ -358,6 +358,12 @@ async function askModel(payload) {
     if(response.status===429)fail(503,"AI временно ограничил число запросов. Повторите позже.");
     fail(502,"Поставщик AI вернул ошибку (" + response.status + "). Повторите запрос позже.");
   }
+  if (data?.status==="incomplete" || data?.incomplete_details?.reason==="max_output_tokens") {
+    // The API may return non-empty text despite hitting max_output_tokens;
+    // never store/export this partial text as a complete legal conclusion.
+    console.error("ai_model_incomplete",String(data?.incomplete_details?.reason||"unknown").slice(0,50));
+    fail(503,"Юридический ответ не завершён полностью. Попробуйте ещё раз или сократите вопрос; неполный ответ не сохранён.");
+  }
   const parsed = extractOutput(data);
   if (!parsed.text) fail(502,"Модель не вернула текстового ответа");
   return { ...parsed, usage:data.usage || null,model:payload.model,
