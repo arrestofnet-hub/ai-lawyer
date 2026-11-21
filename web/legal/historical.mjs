@@ -159,7 +159,55 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
     "\nАРХИВНЫЕ ТЕКСТЫ ИЗ ИСТОРИИ ИЗМЕНЕНИЙ ӘДІЛЕТ; дата события: "+hint.date+
     "; архивная дата не позже события: "+revision.prior+
     (revision.next?"; следующая указанная архивная дата: "+revision.next:"")+
-    "; история: "+source.historyUrl+".\n"+caution+"\n"+review.context+"\n"+publicationContext+"\n"+notes+
+    "; история: "+source.historyUrl+".\n"+caution+"\n"+notes+"\n"+review.context+"\n"+publicationContext+
     (missing.length?"\nНе получены архивные статьи: "+missing.join(", ")+".":"")
   ).slice(0,15000)};
+}
+
+
+// A single case commonly contains several legally distinct dates: the
+// notarial act, purported delivery, and later discovery by a bailiff.
+// Resolve their possible article editions separately. Never use an arbitrary
+// one of those dates as if it represented the entire dispute.
+export async function getTimelineOfficialContext(officialRegistry,query,{
+  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10),
+  publicationReview=true
+}={}){
+  const dates=[...new Set([...String(query).matchAll(/(?<!\d)(?:\d{2}\.\d{2}\.20\d{2}|20\d{2}-\d{2}-\d{2})(?!\d)/g)]
+    .map(m=>isoFromDate(m[0])).filter(d=>d&&d<=asOf))].sort();
+  if(dates.length<=1)return getHistoricalOfficialContext(officialRegistry,query,{
+    fetchImpl,asOf,publicationReview
+  });
+  // Two dates are the normal case; limit automatic source reads and clearly
+  // flag unselected dates instead of silently treating them as irrelevant.
+  const targets=dates.slice(-2);
+  const skipped=dates.filter(d=>!targets.includes(d));
+  const stripped=String(query).replace(/(?<!\d)(?:\d{2}\.\d{2}\.20\d{2}|20\d{2}-\d{2}-\d{2})(?!\d)/g," ");
+  // Multiple timelines often request the same history page/amending acts.
+  // Share only in-flight official HTTP responses; no personal questions,
+  // case texts or server state are cached.
+  const inflight=new Map();
+  const dedup=(url,opts)=>{
+    if(!inflight.has(url))inflight.set(url,Promise.resolve(fetchImpl(url,opts)));
+    return inflight.get(url).then(response=>response.clone());
+  };
+  const results=await Promise.all(targets.map((date,i)=>
+    getHistoricalOfficialContext(officialRegistry,
+      stripped+"; требуются статьи применительно к дате "+ddmmyyyy(date),{
+        fetchImpl:dedup,asOf,publicationReview:publicationReview&&i===0
+      })
+  ));
+  const context="\nНЕСКОЛЬКО ЮРИДИЧЕСКИ ВОЗМОЖНЫХ ДАТ. "+
+    "Не переносить действие одной редакции на все события. "+
+    "Установить роль каждой даты из фактов дела (совершение, направление, "+
+    "получение, осведомлённость, процессуальное обращение). "+
+    "По двум датам ниже получены отдельные архивные тексты, "+
+    "но дата действия каждой нормы юридически НЕ подтверждена.\n"+
+    (skipped.length?"Дополнительные даты в вопросе, не выбранные для "+
+      "автоматической сверки: "+skipped.join(", ")+
+      ". Это не означает отсутствия их юридического значения.\n":"")+
+    results.map((r,i)=>"\n=== КАНДИДАТНАЯ ДАТА "+targets[i]+" ===\n"+
+      (r.context||"Архивный текст недоступен.").slice(0,8500)).join("\n");
+  return {historical:true,context:context.slice(0,19500),
+    comparedDates:targets,otherDates:skipped};
 }
