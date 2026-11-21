@@ -17,7 +17,7 @@ export function officialExportReferences(markdown, modelSources=[]){
   };
   // References appear ONLY when the actual model text names the source.
   // Do not add a normative reference simply because the user has an active case.
-  const mentionsGpk=/\bГПК\b|гражданск\p{L}*\s+процессуал\p{L}*\s+кодекс/iu.test(text);
+  const mentionsGpk=/(?<![\p{L}\p{N}])ГПК(?![\p{L}\p{N}])|гражданск\p{L}*\s+процессуал\p{L}*\s+кодекс/iu.test(text);
   if(mentionsGpk){
     for(const [number,fragment] of [["156","#z156"],["157",""],["158","#z158"],["364","#z364"]]){
       if(new RegExp("(?<!\\d)"+number+"(?!\\d)","u").test(text))
