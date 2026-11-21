@@ -31,6 +31,7 @@ import {loadArticleSnapshots,retrieveArticleSnapshots,buildArticleSnapshotContex
   articleSnapshotStatus} from "./legal/snapshots.mjs";
 import {getLiveOfficialArticleContext} from "./legal/live-official.mjs";
 import {getTimelineOfficialContext} from "./legal/historical.mjs";
+import {getNotarialCompanionContext} from "./legal/notary-procedure.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -373,10 +374,13 @@ async function baseRequest(caseData, history, message, docs, mode, creditAccount
   const legalQuery=message+" "+(caseData.objective||"");
   const matchingActs=selectOfficialSources(officialSources,legalQuery,{max:6})
     .map(x=>x.actId);
-  const historic=await getTimelineOfficialContext(officialSources,legalQuery);
+  const [historic,proceduralContext]=await Promise.all([
+    getTimelineOfficialContext(officialSources,legalQuery),
+    getNotarialCompanionContext(officialSources,legalQuery)
+  ]);
   const liveNormContext=historic.historical?historic.context:
     await getLiveOfficialArticleContext(officialSources,legalQuery);
-  const localNormContext=liveNormContext+buildLegalContext(localNorms,legalQuery)+
+  const localNormContext=liveNormContext+proceduralContext+buildLegalContext(localNorms,legalQuery)+
     buildArticleSnapshotContext(officialArticleSnapshots,legalQuery,{
       limit:3,relatedActIds:matchingActs
     })+
