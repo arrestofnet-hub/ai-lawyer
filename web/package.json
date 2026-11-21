@@ -1,0 +1,21 @@
+{
+  "name": "ai-lawyer-kz-standalone-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check server.mjs && node --check auth.mjs && node --check referrals.mjs && node --check core.mjs && node --check public/app.js && node --check strategy/playbook-selector.mjs && node --check legal/dossier.mjs && node --check legal/norms.mjs && node --check legal/snapshots.mjs && node --check legal/live-official.mjs && node --check legal/article-boundaries.mjs && node --check legal/publication.mjs && node --check legal/historical.mjs && node --check legal/notary-procedure.mjs && node --check legal/notary-343.mjs && node --check legal/notary-stay.mjs && node --check legal/issue-intake.mjs && node --check guest-documents.mjs && node --check model-response-budget.mjs && node --check legal/amendment-review.mjs && node --check legal/snapshot-drift.mjs && node --check deploy/audit-official-law.mjs && node --check legal/sources.mjs && node --check legal/staging.mjs && node --check deploy/stage-official-act.mjs && node --check deploy/import-legal-corpus.mjs && node --check deploy/referral-admin.mjs && node --check deploy/diagnose-google.mjs"
+  },
+  "dependencies": {
+    "docx": "9.15.4",
+    "pdfkit": "0.20.2",
+    "jose": "^6.0.0",
+    "nodemailer": "^7.0.0",
+    "undici": "^7.16.0"
+  }
+}

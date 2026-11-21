@@ -1,0 +1,153 @@
+// Semantic intake hints for colloquial Kazakhstan legal consultations.
+// This is only a recall/triage aid, never a legal classification or
+// source of facts. No user text is stored, logged or used as training data.
+const RULES=Object.freeze([
+  {id:"blocked_account",kind:"consequence",
+    rx:/(?:карт\p{L}*|сч[её]т\p{L}*|кас[- ]?пи|kaspi|халык|halyk).{0,65}(?:арест|блокир|замороз|минус|не\s+работа|не\s+могу\s+снят|списал|снял\p{L}*\s+деньг)|(?:арест|блокир|замороз|списал|снял\p{L}*\s+деньг).{0,65}(?:карт\p{L}*|сч[её]т\p{L}*|кас[- ]?пи|kaspi|халык|halyk)/iu,
+    hint:"Блокировка или списание — последствие; источник взыскания может быть различным. Нужно установить исполнительный документ и конкретное действие."},
+  {id:"bailiff",kind:"actor",
+    rx:/(?:чси|чсишн\p{L}*|судебн\p{L}*\s+исполнител\p{L}*|судебник|исполнител\p{L}*\s+производств\p{L}*|аис\s*оип|аисоип|жсо)/iu,
+    hint:"Участие ЧСИ не означает, что обжалуется только постановление ЧСИ. Различать документ-основание и действия исполнителя."},
+  {id:"notarial_instrument",kind:"possible_basis",
+    rx:/(?:исполнител\p{L}*\s+надпис\p{L}*|нотариальн\p{L}*\s+надпис\p{L}*|нотариус\p{L}*|нотар\p{L}*\s+(?:бумаг|сделал|выписал|надпис)|нотариалка|нотариус\s+выписал)/iu,
+    hint:"Выяснить, является ли документ исполнительной надписью или другим нотариальным действием; не подменять нотариуса судом."},
+  {id:"court_order",kind:"possible_basis",
+    rx:/(?:судебн\p{L}*\s+приказ\p{L}*|приказн\p{L}*\s+производств\p{L}*|приказ\s+от\s+суда)/iu,
+    hint:"Судебный приказ отличается от исполнительной надписи и судебного решения; уточнить тип акта до выбора процессуального документа."},
+  {id:"court_decision",kind:"possible_basis",
+    rx:/(?:решени\p{L}*\s+суд\p{L}*|заочн\p{L}*\s+решени\p{L}*|упрощ[её]нн\p{L}*\s+производств\p{L}*|суд\s+без\s+меня\s+решил)/iu,
+    hint:"Судебное решение, заочное производство и упрощённое производство имеют самостоятельные порядки и сроки."},
+  {id:"debt_dispute",kind:"merits",
+    rx:/(?:долг\p{L}*|кредит\p{L}*|за[её]м\p{L}*|займ\p{L}*|микрозайм\p{L}*|рассрочк\p{L}*|мфо|коллектор\p{L}*|не\s+соглас\p{L}*\s+с\s+сумм\p{L}*|пен\p{L}*)/iu,
+    hint:"Существование долга, сумма долга, право взыскателя и законность исполнительного документа — различные предметы проверки."},
+  {id:"no_notice",kind:"evidence_claim",
+    rx:/(?:не\s+получ(?:ал|ил|ала|ила|али|или)\p{L}*|не\s+приходил\p{L}*|не\s+уведом\p{L}*|ничего\s+не\s+приходил\p{L}*|без\s+моего\s+ведом\p{L}*|узнал\p{L}*\s+только|не\s+знал\s+о|ни\s+о\s+ч[её]м\s+не\s+знал)/iu,
+    hint:"«Не получал» — утверждение лица, не подтверждённое отсутствие надлежащего направления, вручения или осведомлённости; проверять каждое событие и документы отдельно."},
+  {id:"assignment",kind:"rights",
+    rx:/(?:долг\p{L}*\s+продал\p{L}*|продал\p{L}*\s+долг\p{L}*|передал\p{L}*\s+коллектор\p{L}*|уступк\p{L}*|цессия|друг\p{L}*\s+компани\p{L}*\s+требу\p{L}*)/iu,
+    hint:"Разделить уступку права требования, доказательство перехода именно конкретного обязательства и уведомление должника."},
+  {id:"payment_dispute",kind:"merits",
+    rx:/(?:всё\s+оплатил|уже\s+погасил|платил\p{L}*\s+раньше|дважды\s+списал|не\s+учли\s+плат[её]ж\p{L}*|я\s+же\s+платил)/iu,
+    hint:"«Оплатил» не означает автоматически полного погашения конкретного обязательства; сверять получателя, назначение, сумму, даты и остаток."},
+  {id:"housing",kind:"area",
+    rx:/(?:кск|оси|пк\s+каусар|коммунал\p{L}*|жкх|домоуправлен\p{L}*|квартплат\p{L}*|квитанц\p{L}*|капремонт)/iu,
+    hint:"Различить начисление по услуге, тариф, решения собрания собственников, пени, переплаты и обязанность конкретного собственника."},
+  {id:"police",kind:"actor",
+    rx:/(?:полиц\p{L}*|следоват\p{L}*|ердр|ерд[р]|уголовн\p{L}*|мошенн\p{L}*|заявлен\p{L}*\s+о\s+преступлени\p{L}*)/iu,
+    hint:"Не смешивать проверку сообщения о преступлении, регистрацию в ЕРДР, гражданский спор и установление состава преступления."},
+  {id:"informal_relief",kind:"goal",
+    rx:/(?:уберите|снимите|отмените|удалите|верните|разблокируйте|как\s+вернуть|как\s+снять|как\s+убрать|что\s+делать|помогите|не\s+знаю\s+что\s+делать)/iu,
+    hint:"Бытовая просьба о результате не определяет юридический способ: отдельно установить желаемый результат и процессуальное требование."}
+]);
+export function analyzeLayQuestion(query){
+  const input=String(query||"").slice(0,14000);
+  const signals=RULES.filter(r=>r.rx.test(input)).map(r=>({id:r.id,kind:r.kind,hint:r.hint}));
+  return {
+    signals:signals.slice(0,9),
+    ambiguousEnforcement:signals.some(x=>x.id==="blocked_account")&&
+      !signals.some(x=>["notarial_instrument","court_order","court_decision"].includes(x.id)),
+    plainLanguage:signals.some(x=>["blocked_account","informal_relief","no_notice","payment_dispute"].includes(x.id))
+  };
+}
+
+// Discern "I think I paid" from verified or unqualified payment assertions.
+// Non-exhaustive signal for higher-precision prompts, not a fact extractor.
+export function uncertainPaymentSignals(query){
+  const s=String(query||"").slice(0,14000);
+  const payment=/(?:платил\p{L}*|платеж\p{L}*|плат[её]ж\p{L}*|оплатил\p{L}*|погасил\p{L}*|вносил\p{L}*|переводил\p{L}*)/iu;
+  const hedgeBefore=/(?:вроде|кажется|по[\s-]?моему|наверно|возможно|не\s+уверен\p{L}*|не\s+помню\s+точно).{0,55}(?:платил\p{L}*|оплатил\p{L}*|погасил\p{L}*|вносил\p{L}*)/iu;
+  const hedgeAfter=/(?:платил\p{L}*|оплатил\p{L}*|погасил\p{L}*|вносил\p{L}*).{0,40}(?:вроде|кажется|но\s+не\s+уверен\p{L}*)/iu;
+  return {
+    paymentMentioned:payment.test(s),
+    existenceUncertain:hedgeBefore.test(s)||hedgeAfter.test(s),
+    amountUncertain:/(?:не\s+помню\s+(?:сколько|сумму)|не\s+знаю\s+(?:сколько|сумму)|сколько\s+платил\p{L}*\s+не\s+помню)/iu.test(s)
+  };
+}
+export function qualifyUncertainPaymentDraft(query,answer){
+  const original=String(answer||"");
+  if(!uncertainPaymentSignals(query).existenceUncertain)return original;
+  // Narrow, factual de-risking for a known false assertion in a generated
+  // sample court/bailiff letter. Do not rewrite unrelated document clauses.
+  return original.replace(
+    /Ранее я производил(?:а)? платежи по обязательству\./giu,
+    "По моим предварительным сведениям, ранее по обязательству могли производиться платежи; прошу проверить их наличие, суммы и учёт."
+  );
+}
+
+// Keep a standalone answer standalone. A common failure after repeated
+// quality tests is a gratuitous correction of a prior test response appearing
+// in a new client's consultation. Do not alter real client facts, statutes,
+// evidence references or substantive guidance.
+export function removeUnsolicitedRevisionNotes(query,answer){
+  const input=String(query||"");
+  const original=String(answer||"");
+  const explicitlyRevision=/(?:предыдущ\p{L}*\s+(?:ответ|консультац)\p{L}*|прошл\p{L}*\s+(?:ответ|консультац)\p{L}*|исправ\p{L}*\s+(?:свой|твой|предыдущ\p{L}*)\s*ответ\p{L}*|сравни\p{L}*\s+с\s+предыдущ\p{L}*\s+ответ\p{L}*)/iu.test(input);
+  if(explicitlyRevision)return original;
+  return original
+    .replace(/(^|\n)[ \t]*Уточнение к предыдущему ответу:\s*формулировка\s+«ранее я производил платежи»\s+была\s+слишком\s+категоричной\.[ \t]*/giu,"$1")
+    .replace(/(^|\n)[ \t]*(?:Из предыдущих учебных примеров нельзя переносить в ваше дело даты и документы\.|Это тестовый пример из предыдущего диалога\.)[ \t]*(?=\n|$)/giu,"$1")
+    .replace(/\n{3,}/g,"\n\n");
+}
+
+export function buildLayIntakeContext(query,{documentCount=0}={}){
+  const r=analyzeLayQuestion(query);
+  let context="\nМЕТОД ПОНИМАНИЯ ОБРАЩЕНИЯ ОБЫЧНОГО ЧЕЛОВЕКА (НЕ ПРАВОВАЯ КВАЛИФИКАЦИЯ):"+
+    "\n1. Переформулируй простыми словами, что случилось и какой результат нужен; "+
+    "отдельно определи предмет конкретного вопроса и предмет материально-правового спора. "+
+    "Неправильные термины и опечатки пользователя исправляй мысленно, но не меняй содержание его фактов."+
+    "\n2. Раздели: что пользователь утверждает; что подтверждено документом; "+
+    "что только возможно; чего не хватает. Не выдавай варианты за установленные факты."+
+    "\n3. Не ограничивайся буквальным вопросом, если из описания ясно, что требуется "+
+    "другой законный результат. При нескольких возможных юридических основаниях "+
+    "сопоставь варианты и проверь вид первичного документа до выбора жалобы, иска или заявления."+
+    "\n4. Критические неизвестные для сроков и подсудности уточни одним коротким вопросом, "+
+    "только если без них нельзя выбрать безопасный маршрут; иначе дай условную схему и "+
+    "укажи первое действие по истребованию доказательств.";
+  if(r.signals.length){
+    context+="\nОБНАРУЖЕННЫЕ ЯЗЫКОВЫЕ СИГНАЛЫ — НЕ ФАКТЫ И НЕ ГОТОВЫЙ ВЫВОД:";
+    for(const s of r.signals.slice(0,6))
+      context+="\n- "+s.id+": "+s.hint;
+  }
+  if(r.ambiguousEnforcement)
+    context+="\nНЕЛЬЗЯ автоматически заключать, что блокировку сделал банк, ЧСИ, нотариус или суд: источник пока не определён.";
+  const payment=uncertainPaymentSignals(query);
+  if(payment.existenceUncertain){
+    context+="\nСИЛЬНОЕ ДОКАЗАТЕЛЬСТВЕННОЕ ОГРАНИЧЕНИЕ: человек не уверен, что платил. "+
+      "НЕЛЬЗЯ писать от первого лица как установленный факт «Ранее я производил платежи», «Я оплатил долг» или «Долг погашен». "+
+      "Даже в шаблоне заявления используй условное утверждение: "+
+      "«По моим предварительным сведениям, ранее могли производиться платежи; прошу проверить их наличие, суммы и учёт».";
+  }else if(payment.paymentMentioned&&payment.amountUncertain){
+    context+="\nПлатежи упомянуты, но сумма неизвестна. Не называй приблизительную сумму подтверждённой; запроси выписку, назначение и зачёт каждого платежа.";
+  }
+  if(/(?:судебник|чси|исполнитель|кредитор|мфо).{0,80}(?:говорит|утверждает|заявляет).{0,80}(?:должен|долг)/iu.test(query))
+    context+="\nУтверждение о существовании долга прозвучало от другого лица. Это позиция кредитора/исполнителя, а не доказанное признание должника.";
+  context+="\nПИШИ ОТ ЛИЦА РЕАЛЬНОГО ПОЛЬЗОВАТЕЛЯ: не упоминай внутренние тесты, предыдущие учебные примеры, промпты, технические инструкции и проверки. "+
+    "Не оформляй неподтверждённый факт как установленное обстоятельство в готовом заявлении. "+
+    "Если точный номер статьи закона не проверен, дай официальный URL акта как справочный источник с честной оговоркой; не выдумывай пункт.";
+
+  if(documentCount)
+    context+="\nК ОБРАЩЕНИЮ ПРИЛОЖЕНЫ "+documentCount+
+      " документ(ов). Прочитай каждый доступный файл полностью, включая исключения, "+
+      "сноски, подписи и приложения; если файл недоступен/скан неразборчив — "+
+      "укажи конкретный пробел, не имитируй прочтение.";
+  return context.slice(0,4600);
+}
+
+
+// Expand only discovery keywords, not facts. The companion instructions must
+// continue to say that retrieved candidate norms are not a confirmed case
+// classification. No private messages are sent to forum/social networks.
+export function enrichLayLegalSearchQuery(query){
+  const input=String(query||"").slice(0,14000);
+  const {signals}=analyzeLayQuestion(input);
+  const has=id=>signals.some(x=>x.id===id);
+  const tags=[];
+  if(has("blocked_account")&&has("bailiff"))
+    tags.push("ЧСИ исполнительное производство постановление об аресте счёта исполнительный документ");
+  if(has("notarial_instrument")&&has("bailiff")&&has("debt_dispute"))
+    tags.push("исполнительная надпись нотариуса (возможный источник, не факт)");
+  if(has("court_order"))tags.push("судебный приказ");
+  if(has("assignment"))tags.push("уступка права требования цессия");
+  if(has("housing"))tags.push("содержание многоквартирного дома коммунальные платежи");
+  return input+(tags.length?"\nПОИСКОВЫЕ ГИПОТЕЗЫ (не факты): "+tags.join("; "):"");
+}
