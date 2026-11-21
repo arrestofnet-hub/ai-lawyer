@@ -19,7 +19,7 @@ import {
 import {
   Store, MAX_FILE_BYTES, MAX_MESSAGE_CHARS, MAX_CASES_PER_USER, MAX_DOCS_PER_CASE,
   validateEmail, validPassword, hashPassword, checkPassword, tokenHash, dataKey,
-  randomId, classifyFile, extractOutput, buildMessages, strategyInstruction,
+  randomId, classifyFile, extractOutput, modelResponseIsComplete, buildMessages, strategyInstruction,
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
@@ -30,7 +30,7 @@ import {loadOfficialRegistry,selectOfficialSources,sourcePointerContext,official
 import {loadArticleSnapshots,retrieveArticleSnapshots,buildArticleSnapshotContext,
   articleSnapshotStatus} from "./legal/snapshots.mjs";
 import {getLiveOfficialArticleContext} from "./legal/live-official.mjs";
-import {getHistoricalOfficialContext} from "./legal/historical.mjs";
+import {getTimelineOfficialContext} from "./legal/historical.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -358,6 +358,12 @@ async function askModel(payload) {
     if(response.status===429)fail(503,"AI временно ограничил число запросов. Повторите позже.");
     fail(502,"Поставщик AI вернул ошибку (" + response.status + "). Повторите запрос позже.");
   }
+  if (!modelResponseIsComplete(data)) {
+    // The API may return non-empty text despite hitting max_output_tokens;
+    // never store/export this partial text as a complete legal conclusion.
+    console.error("ai_model_incomplete",String(data?.incomplete_details?.reason||"unknown").slice(0,50));
+    fail(503,"Юридический ответ не завершён полностью. Попробуйте ещё раз или сократите вопрос; неполный ответ не сохранён.");
+  }
   const parsed = extractOutput(data);
   if (!parsed.text) fail(502,"Модель не вернула текстового ответа");
   return { ...parsed, usage:data.usage || null,model:payload.model,
@@ -367,7 +373,7 @@ async function baseRequest(caseData, history, message, docs, mode, creditAccount
   const legalQuery=message+" "+(caseData.objective||"");
   const matchingActs=selectOfficialSources(officialSources,legalQuery,{max:6})
     .map(x=>x.actId);
-  const historic=await getHistoricalOfficialContext(officialSources,legalQuery);
+  const historic=await getTimelineOfficialContext(officialSources,legalQuery);
   const liveNormContext=historic.historical?historic.context:
     await getLiveOfficialArticleContext(officialSources,legalQuery);
   const localNormContext=liveNormContext+buildLegalContext(localNorms,legalQuery)+
@@ -377,10 +383,15 @@ async function baseRequest(caseData, history, message, docs, mode, creditAccount
     sourcePointerContext(officialSources,legalQuery,{max:4});
   const input = buildMessages(creditAccount?history.slice(-10):history, message, docs,
     { ...caseData, mode, localNormContext });
+  const officialTextFetched=/(?:АРХИВНЫЕ ТЕКСТЫ ИЗ ИСТОРИИ|ОНЛАЙН-ИЗВЛЕЧЕНИЕ ИЗ ОФИЦИАЛЬНОЙ)/.test(localNormContext);
+  const provenanceInstruction=officialTextFetched
+    ? "\nПРОВЕРКА ИСТОЧНИКОВ: Сервер уже получил тексты указанных норм с официальных страниц Әділет; они находятся в контексте ДЕЛО. НЕ утверждай, что у тебя нет доступа к их тексту, и НЕ выдавай их за результат лишь собственной памяти. Ссылайся на официальный URL каждого извлечённого положения. Не путай получение текста с подтверждением действия конкретной редакции в дату события. Когда в вопросе несколько дат, отдельно применяй нормы на каждую юридически значимую дату; не утверждай, что сноски и даты введения проверены, если они не получены."
+    : "\nЕсли официальный текст в серверном контексте отсутствует, честно обозначь отсутствие подтверждённого текста.";
+  const needsDetailedAnswer=/(?:полноценн|подробн|полный\s+юридическ|проведи\s+(?:полный|юридический)|алгоритм\s+защит)/iu.test(message);
   return {
     model:freeTier?FREE_MODEL:MODEL, store:false, instructions:strategyInstruction(strategy+"\n\n"+practiceMethods+"\n\n"+
-      selectLegalPlaybooks(playbooks,message,caseData.summary),mode),
-    reasoning:{ effort:"medium" }, max_output_tokens:creditAccount?(mode==="consult"?2400:4000):6500,
+      selectLegalPlaybooks(playbooks,message,caseData.summary),mode)+provenanceInstruction,
+    reasoning:{ effort:"medium" }, max_output_tokens:creditAccount?(mode==="consult"?(needsDetailedAnswer?5400:3300):5000):6500,
     ...(SEARCH_ENABLED ? { tools:[{ type:"web_search", search_context_size:"medium", filters:{ allowed_domains:["adilet.zan.kz","zan.gov.kz","gov.kz","sud.gov.kz","egov.kz"] } }] } : {}),
     input,
   };
