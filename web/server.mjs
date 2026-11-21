@@ -19,7 +19,7 @@ import {
 import {
   Store, MAX_FILE_BYTES, MAX_MESSAGE_CHARS, MAX_CASES_PER_USER, MAX_DOCS_PER_CASE,
   validateEmail, validPassword, hashPassword, checkPassword, tokenHash, dataKey,
-  randomId, classifyFile, extractOutput, buildMessages, strategyInstruction,
+  randomId, classifyFile, extractOutput, modelResponseIsComplete, buildMessages, strategyInstruction,
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
@@ -358,7 +358,7 @@ async function askModel(payload) {
     if(response.status===429)fail(503,"AI временно ограничил число запросов. Повторите позже.");
     fail(502,"Поставщик AI вернул ошибку (" + response.status + "). Повторите запрос позже.");
   }
-  if (data?.status==="incomplete" || data?.incomplete_details?.reason==="max_output_tokens") {
+  if (!modelResponseIsComplete(data)) {
     // The API may return non-empty text despite hitting max_output_tokens;
     // never store/export this partial text as a complete legal conclusion.
     console.error("ai_model_incomplete",String(data?.incomplete_details?.reason||"unknown").slice(0,50));
