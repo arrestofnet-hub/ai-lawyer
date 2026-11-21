@@ -38,8 +38,17 @@ export function parseCivilProcedureStayProvisions(html){
   const p157=paragraphs(b157);
   const filing=p157.find(x=>/^1\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
     /в\s+день\s+(?:вынесения\s+определения\s+о\s+возбуждении|его\s+поступления)/iu.test(x));
-  const decision=p157.find(x=>/^2\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
-    /без\s+извещения\s+лиц/iu.test(x)&&/(?:выносит|вынес[а-яё]+)\s+определение/iu.test(x));
+  // In the real Әділет HTML article 157(2) is split into two <p>
+  // elements: paragraph 2 states "без извещения лиц", and the immediately
+  // following paragraph states "судья выносит определение". Do not require
+  // these independent sentences to appear in one HTML paragraph.
+  const decisionIndex=p157.findIndex(x=>
+    /^2\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
+    /без\s+извещения\s+лиц/iu.test(x));
+  const decisionPart=decisionIndex<0?"":p157.slice(decisionIndex,decisionIndex+2).join(" ");
+  const decision=/(?:выносит|вынес[а-яё]+)\s+определение\s+об\s+обеспечении\s+иска/iu.test(decisionPart)
+    &&/об\s+отказе\s+в\s+удовлетворении\s+заявления/iu.test(decisionPart)
+    ?decisionPart:null;
   const p158=paragraphs(b158);
   const delivery=p158.find(x=>/^2\)\s*в\s+соответствующий\s+орган\s+юстиции\s+либо\s+в\s+региональную\s+палату/iu.test(x)&&
     /приостановления\s+исполнительного\s+производства/iu.test(x)&&
@@ -116,3 +125,17 @@ export async function getNotarialCollectionStayContext({
     "Не обещай, что обеспечительные меры будут приняты автоматически.";
   return context.slice(0,8600);
 }
+
+// Machine-checkable status based on complete official-source excerpts;
+// a casual mention of "статьи 158" in an instructional paragraph must
+// NEVER count as verification.
+export function getNotarialStayEvidenceStatus(context){
+  const c=String(context||"");
+  return {
+    article156:/\nГПК РК, подпункт 6\) части 1 статьи 156\. Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/K1500000377#z156\. Норма: 6\) приостановление взыскания по исполнительному документу/iu.test(c),
+    article157:/\nГПК РК, статья 157 \(порядок рассмотрения\)\. Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/K1500000377(?:#z\d+)?\. Норма: 1\. Заявление об обеспечении иска[\s\S]*?без извещения лиц[\s\S]*?выносит определение об обеспечении иска/iu.test(c),
+    article158:/\nГПК РК, подпункт 2\) части 1 статьи 158 \(адресат судебного определения\)\. Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/K1500000377#z158\. Норма: 2\) в соответствующий орган юстиции либо в региональную палату/iu.test(c),
+    supremeCourt:/\nНормативное постановление ВС № 6 от 26\.05\.2022,[\s\S]*?Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/P220000006S#z24\. Текст: Если на момент подачи жалобы/iu.test(c)
+  };
+}
+
