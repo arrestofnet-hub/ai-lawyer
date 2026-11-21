@@ -6,6 +6,11 @@ import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { exportDocx, exportPdf } from "./export.mjs";
 import {
+  GUEST_ATTACH_LIMIT,GUEST_ATTACH_TOTAL_BYTES,
+  guestOwnedDocuments,selectGuestDocuments,transferGuestDocuments,
+  pruneOrphanedGuestDocuments
+} from "./guest-documents.mjs";
+import {
   REFERRAL_BONUS,TRIAL_CREDITS,aiTokenCost,normalizeReferral,safeSource,
   campaignByCode,createCampaign,registrationCredit,allocateVerifiedRegistration,
   balanceOf,canSpend,spendCredits,adminAuthorized,displayTokens,PUBLIC_TOKEN_MULTIPLIER,
@@ -225,9 +230,17 @@ function guestStatus(guest,req) {
     documentTokenCost:GUEST_DOCUMENT_COST,documentRemaining,
     reminderAt:GUEST_REMINDER,
     ...(quota.restriction?{restriction:quota.restriction}:{}),
-    messages:guest?.messages.map(m=>store.publicMessage(m))||[]};
+    messages:guest?.messages.map(m=>store.publicMessage(m))||[],
+    documents:guestOwnedDocuments(store.db,guest?.hash).map(d=>store.publicDocument(d)),
+    attachmentLimit:GUEST_ATTACH_LIMIT,attachmentTotalBytes:GUEST_ATTACH_TOTAL_BYTES};
 }
 function openGuest(req,res) {
+  const active=(store.db.guests||[]).filter(g=>g.expiresAt>Date.now());
+  if(active.length!==(store.db.guests||[]).length){
+    store.db.guests=active;
+    pruneOrphanedGuestDocuments(store,new Set(active.map(g=>g.hash)));
+    store.save();
+  }
   const guest = guestFor(req);
   if (guest) return json(res,200,guestStatus(guest,req));
   if (!guestQuota(req).remaining) return json(res,200,guestStatus(null,req));
@@ -258,10 +271,12 @@ function saveGuestConversation(req,user,priorGuestHash=null,grantRemaining=false
   // Existing-account logins never mint additional credits.
   if(grantRemaining&&user.accountType==="trial"&&Number.isInteger(user.credits))
     user.credits+=Math.floor(remainingGuestTokens(guest)/PUBLIC_TOKEN_MULTIPLIER);
-  const id=guest.messages?.length?randomId():null,time=now();
+  const hasDocuments=guestOwnedDocuments(store.db,guest.hash).length>0;
+  const id=guest.messages?.length||hasDocuments?randomId():null,time=now();
   if(id){
     store.db.cases.push({...GUEST_CASE,id,ownerId:user.id,createdAt:time,updatedAt:time});
     store.db.messages.push(...guest.messages.map(m=>({...m,caseId:id})));
+    transferGuestDocuments(store.db,guest.hash,user.id,id);
   }
   guest.messages=[];
   guest.transferredTo=user.id;
@@ -277,6 +292,46 @@ function grandfatherTrialBalance(user) {
   try{store.save();}
   catch(e){user.credits=previous;delete user.freeCreditVersion;throw e;}
 }
+async function guestUploadDocument(req,res) {
+  const guest=guestFor(req);
+  if(!guest||guest.transferredTo)fail(409,"Обновите страницу, чтобы открыть гостевой чат");
+  if(guestRequests.has(guest.hash))fail(409,"Дождитесь окончания анализа перед загрузкой файла");
+  rateLimit(req,"guest-file",12,60*60000);
+  const old=guestOwnedDocuments(store.db,guest.hash);
+  if(old.length>=GUEST_ATTACH_LIMIT)fail(400,"В гостевом чате можно прикрепить не более трёх файлов");
+  let name;
+  try{name=decodeURIComponent(String(req.headers["x-filename"]||""));}
+  catch{fail(400,"Некорректное название файла");}
+  if(!name||name.length>400)fail(400,"Укажите допустимое название файла");
+  const bytes=await readBody(req,GUEST_ATTACH_TOTAL_BYTES);
+  const valid=classifyFile(name,bytes);
+  if(!valid)fail(400,"Допустимы PDF, DOCX, изображения и текстовый файл до 1,5 МБ");
+  const current=old.reduce((sum,d)=>sum+d.size,0);
+  if(current+bytes.length>GUEST_ATTACH_TOTAL_BYTES)
+    fail(413,"Суммарный размер гостевых документов — до 1,5 МБ. Удалите лишний файл или войдите в кабинет");
+  const d={id:randomId(),guestHash:guest.hash,...valid,size:bytes.length,createdAt:now()};
+  store.writeFile(d.id,bytes);
+  store.db.documents.push(d);
+  try{store.save();}
+  catch(e){
+    store.db.documents=store.db.documents.filter(x=>x.id!==d.id);
+    store.deleteFile(d.id);
+    throw e;
+  }
+  return json(res,201,{document:store.publicDocument(d),...guestStatus(guest,req)});
+}
+function guestDeleteDocument(req,res,id) {
+  const guest=guestFor(req);
+  if(!guest||guest.transferredTo)fail(403,"Гостевой документ недоступен");
+  if(guestRequests.has(guest.hash))fail(409,"Дождитесь окончания анализа перед удалением файла");
+  const d=guestOwnedDocuments(store.db,guest.hash).find(x=>x.id===id);
+  if(!d)fail(404,"Документ не найден");
+  store.deleteFile(d.id);
+  store.db.documents=store.db.documents.filter(x=>x.id!==d.id);
+  store.save();
+  return json(res,200,guestStatus(guest,req));
+}
+
 async function guestChat(req,res) {
   const body = await bodyJson(req);
   const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -292,10 +347,14 @@ async function guestChat(req,res) {
   const already=requestId && guest.messages.find(m=>m.role==="assistant" && m.requestId===requestId);
   if(already){
     const original=guest.messages.find(m=>m.role==="user" && m.requestId===requestId);
-    if(!original || original.text!==message || original.mode!==mode)
+    if(!original || original.text!==message || original.mode!==mode ||
+       JSON.stringify(original.docIds||[])!==JSON.stringify(body.docIds||[]))
       fail(409,"Идентификатор запроса уже использован");
     return json(res,200,{...guestStatus(guest,req),alreadyProcessed:true});
   }
+  const ids=body.docIds===undefined?[]:body.docIds;
+  const selected=selectGuestDocuments(store.db,guest.hash,ids);
+  const docs=selected.map(d=>({...d,bytes:store.readFile(d.id)}));
   const initialStatus = guestStatus(guest,req);
   const available=mode==="draft" ? initialStatus.documentRemaining : initialStatus.remaining;
   if (!available) return json(res,403,{
@@ -312,13 +371,14 @@ async function guestChat(req,res) {
     if (!process.env.OPENAI_API_KEY) fail(503,"Серверу не задан OPENAI_API_KEY");
     enforceFreeApiBudget();
     reserveGuestAttempt(req);
-    const result = await askModel(await baseRequest(GUEST_CASE,guest.messages,message,[],mode,true,true));
+    const result = await askModel(await baseRequest(GUEST_CASE,guest.messages,message,docs,mode,true,true));
     result.text=removeUnsolicitedRevisionNotes(message,qualifyUncertainPaymentDraft(message,result.text));
     const previousMessages = guest.messages;
     const previousUsed=guest.used,previousDraft=guest.draftUsed;
     const previousCostCount=store.db.providerUsage?.length||0;
     guest.messages = [...previousMessages,
-      {id:randomId(),role:"user",text:message,mode,requestId,createdAt:now()},
+      {id:randomId(),role:"user",text:message,mode,docIds:ids,
+       attachments:selected.map(d=>d.filename),requestId,createdAt:now()},
       {id:randomId(),role:"assistant",text:result.text,sources:result.sources,mode,requestId,createdAt:now()}];
     if(mode==="draft")guest.draftUsed=true;
     else guest.used++;
@@ -510,10 +570,17 @@ async function api(req,res,url) {
       guestEnabled:GUEST_ENABLED, trialCredits:displayTokens(TRIAL_CREDITS)
     });
   }
-  if (GUEST_ENABLED && (p === "/chat/api/guest" || p === "/chat/api/guest/chat")) {
+  if (GUEST_ENABLED && (
+    p === "/chat/api/guest" || p === "/chat/api/guest/chat" ||
+    p === "/chat/api/guest/documents" ||
+    /^\/chat\/api\/guest\/documents\/[a-f0-9-]{36}$/i.test(p)
+  )) {
     if (sessionFor(req)) fail(409,"Вы уже вошли в кабинет");
     if (req.method === "GET" && p.endsWith("/guest")) return openGuest(req,res);
     if (req.method === "POST" && p.endsWith("/chat")) return guestChat(req,res);
+    if (req.method === "POST" && p.endsWith("/documents")) return guestUploadDocument(req,res);
+    if (req.method === "DELETE" && p.includes("/guest/documents/"))
+      return guestDeleteDocument(req,res,p.split("/").at(-1));
     fail(405,"Метод не поддерживается");
   }
   if(p==="/chat/api/admin/referrals/disable"&&req.method==="POST"){
