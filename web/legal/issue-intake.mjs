@@ -74,6 +74,21 @@ export function qualifyUncertainPaymentDraft(query,answer){
   );
 }
 
+// Keep a standalone answer standalone. A common failure after repeated
+// quality tests is a gratuitous correction of a prior test response appearing
+// in a new client's consultation. Do not alter real client facts, statutes,
+// evidence references or substantive guidance.
+export function removeUnsolicitedRevisionNotes(query,answer){
+  const input=String(query||"");
+  const original=String(answer||"");
+  const explicitlyRevision=/(?:\bпредыдущ\p{L}*\s+(?:ответ|консультац)|\bпрошл\p{L}*\s+(?:ответ|консультац)|\bисправ\p{L}*\s+(?:свой|твой|предыдущ\p{L}*)\s*ответ|\bсравни\p{L}*\s+с\s+предыдущ\p{L}*\s+ответ)/iu.test(input);
+  if(explicitlyRevision)return original;
+  return original
+    .replace(/(^|\n)[ \t]*Уточнение к предыдущему ответу:\s*формулировка\s+«ранее я производил платежи»\s+была\s+слишком\s+категоричной\.[ \t]*/giu,"$1")
+    .replace(/(^|\n)[ \t]*(?:Из предыдущих учебных примеров нельзя переносить в ваше дело даты и документы\.|Это тестовый пример из предыдущего диалога\.)[ \t]*(?=\n|$)/giu,"$1")
+    .replace(/\n{3,}/g,"\n\n");
+}
+
 export function buildLayIntakeContext(query,{documentCount=0}={}){
   const r=analyzeLayQuestion(query);
   let context="\nМЕТОД ПОНИМАНИЯ ОБРАЩЕНИЯ ОБЫЧНОГО ЧЕЛОВЕКА (НЕ ПРАВОВАЯ КВАЛИФИКАЦИЯ):"+
