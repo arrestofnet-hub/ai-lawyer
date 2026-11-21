@@ -77,3 +77,22 @@ export function buildLayIntakeContext(query,{documentCount=0}={}){
       "укажи конкретный пробел, не имитируй прочтение.";
   return context.slice(0,4600);
 }
+
+
+// Expand only discovery keywords, not facts. The companion instructions must
+// continue to say that retrieved candidate norms are not a confirmed case
+// classification. No private messages are sent to forum/social networks.
+export function enrichLayLegalSearchQuery(query){
+  const input=String(query||"").slice(0,14000);
+  const {signals}=analyzeLayQuestion(input);
+  const has=id=>signals.some(x=>x.id===id);
+  const tags=[];
+  if(has("blocked_account")&&has("bailiff"))
+    tags.push("ЧСИ исполнительное производство постановление об аресте счёта исполнительный документ");
+  if(has("notarial_instrument")&&has("bailiff")&&has("debt_dispute"))
+    tags.push("исполнительная надпись нотариуса (возможный источник, не факт)");
+  if(has("court_order"))tags.push("судебный приказ");
+  if(has("assignment"))tags.push("уступка права требования цессия");
+  if(has("housing"))tags.push("содержание многоквартирного дома коммунальные платежи");
+  return input+(tags.length?"\nПОИСКОВЫЕ ГИПОТЕЗЫ (не факты): "+tags.join("; "):"");
+}
