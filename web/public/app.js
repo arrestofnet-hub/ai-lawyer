@@ -965,15 +965,53 @@ $("#uploadInput").addEventListener("change",async ev=>{
   if(uploaded>3 && state.docIds.size===3)
     showError("Загружено файлов: "+uploaded+". В запрос выбрано максимум 3; остальные сохранены в деле.");
 });
+$("#guestAttachShortcut").addEventListener("click",()=>{
+  if(!state.guest||state.busy||state.guestUploadBusy)return;
+  $("#guestUploadInput").click();
+});
+$("#guestUploadInput").addEventListener("change",async ev=>{
+  const files=[...ev.target.files];
+  ev.target.value="";
+  if(!state.guest||state.busy||state.guestUploadBusy||!files.length)return;
+  const currentCount=(state.guest.documents||[]).length;
+  if(currentCount+files.length>3){
+    showError("В гостевом чате можно прикрепить не более трёх документов одновременно.");
+    return;
+  }
+  const total=(state.guest.documents||[]).reduce((sum,d)=>sum+d.size,0)+
+    files.reduce((sum,f)=>sum+f.size,0);
+  if(total>1500000){
+    showError("Для гостевого анализа общий размер файлов — до 1,5 МБ. Удалите лишние файлы или войдите в кабинет.");
+    return;
+  }
+  state.guestUploadBusy=true;$("#send").disabled=true;renderGuestDocuments();
+  try{
+    for(const file of files){
+      const data=await request("/guest/documents",{
+        method:"POST",body:file,headers:{"x-filename":encodeURIComponent(file.name)}
+      });
+      state.guestDocIds.add(data.document.id);
+      state.pendingRequest=null;
+      updateGuest(data);
+    }
+    $("#notice").textContent="Файл загружен и будет включён в следующий вопрос. Для анализа нажмите «Отправить».";
+  }catch(e){showError(e.message);}
+  finally{
+    state.guestUploadBusy=false;
+    if(state.guest)updateGuest(state.guest);
+  }
+});
 $("#messageForm").addEventListener("submit",async ev=>{
   ev.preventDefault();if(state.busy||(!state.guest&&!state.current)) return;
+  if(state.guest&&state.guestUploadBusy){showError("Загрузка файла ещё не завершена.");return;}
   const message=$("#messageInput").value.trim();if(!message) return;
   const guest=state.guest;
   if(guest&&!guestCanSend(guest)){openAuth(true);return;}
-  const id=state.current?.case.id, mode=state.mode, docIds=[...state.docIds];
+  const id=state.current?.case.id, mode=state.mode,
+    docIds=state.guest?[...state.guestDocIds]:[...state.docIds];
   // Reuse the same ID for a retry of the same prompt, so a late server
   // response cannot charge twice if the browser connection timed out.
-  const key=JSON.stringify({id:id||null,message,mode,docIds:guest?[]:docIds});
+  const key=JSON.stringify({id:id||null,message,mode,docIds});
   if(!state.pendingRequest || state.pendingRequest.key!==key){
     state.pendingRequest={key,id:crypto.randomUUID(),caseId:id||null};
   }
@@ -989,7 +1027,7 @@ $("#messageForm").addEventListener("submit",async ev=>{
   },1000);
   try{
     if(guest){
-      const next=await post("/guest/chat",{message,mode,requestId});
+      const next=await post("/guest/chat",{message,mode,docIds,requestId});
       state.pendingRequest=null;
       $("#messageInput").value="";
       updateGuest(next);
@@ -1037,7 +1075,7 @@ $("#messageForm").addEventListener("submit",async ev=>{
   }finally{
     clearInterval(progress);
     state.busy=false;
-    $("#send").disabled=state.guest?!guestCanSend(state.guest):false;
+    $("#send").disabled=state.guest?state.guestUploadBusy||!guestCanSend(state.guest):false;
     $("#send").textContent="Отправить";
   }
 });
