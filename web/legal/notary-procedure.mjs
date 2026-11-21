@@ -4,6 +4,7 @@
 import crypto from "node:crypto";
 import {getLiveOfficialArticleContext} from "./live-official.mjs";
 import {getNotarial343Context} from "./notary-343.mjs";
+import {getNotarialCollectionStayContext} from "./notary-stay.mjs";
 
 const MAX_BYTES=2300000;
 function textOf(html){
@@ -56,25 +57,35 @@ export async function getNotarialCompanionContext(registry,question,{
 }={}){
   if(process.env.LIVE_OFFICIAL_LAW_ENABLED==="0"||
      !isNotarialInscriptionQuestion(question))return "";
+  // All requests to the same official document in one consultation share
+  // the same HTTP fetch. Each consumer receives its own clone to parse.
+  const inFlight=new Map();
+  const sharedFetch=(url,opts)=>{
+    if(!inFlight.has(url))inFlight.set(url,Promise.resolve().then(()=>fetchImpl(url,opts)));
+    return inFlight.get(url).then(r=>r.clone());
+  };
   const notary=registry.find(x=>x.id==="notary"&&x.actId==="Z970000155_");
   const gpk=registry.find(x=>x.id==="gpk"&&x.actId==="K1500000377");
   const court=registry.find(x=>x.id==="np-notarial-inscription"&&x.actId==="P220000006S");
   const jobs=[
-    notary?getLiveOfficialArticleContext([notary],"статья 92-8 о нотариате",{fetchImpl,asOf}):Promise.resolve(""),
-    gpk?getLiveOfficialArticleContext([gpk],"ГПК статья 364 нотариальное действие",{fetchImpl,asOf}):Promise.resolve(""),
-    court?fetchCourtResolution(court.actId,fetchImpl).catch(()=>"\nНП ВС № 6: полный текст судебных разъяснений сейчас не получен. Официальный адрес: https://old.adilet.zan.kz/rus/docs/P220000006S. НЕ утверждай проверку точного срока по этому источнику."):Promise.resolve(""),
-    verify343?getNotarial343Context({fetchImpl,asOf}):Promise.resolve("")
+    notary?getLiveOfficialArticleContext([notary],"статья 92-8 о нотариате",{fetchImpl:sharedFetch,asOf}):Promise.resolve(""),
+    gpk?getLiveOfficialArticleContext([gpk],"ГПК статья 364 нотариальное действие",{fetchImpl:sharedFetch,asOf}):Promise.resolve(""),
+    court?fetchCourtResolution(court.actId,sharedFetch).catch(()=>"\nНП ВС № 6: полный текст судебных разъяснений сейчас не получен. Официальный адрес: https://old.adilet.zan.kz/rus/docs/P220000006S. НЕ утверждай проверку точного срока по этому источнику."):Promise.resolve(""),
+    verify343?getNotarial343Context({fetchImpl:sharedFetch,asOf}):Promise.resolve(""),
+    getNotarialCollectionStayContext({fetchImpl:sharedFetch,asOf})
   ];
-  const [currentNotary,gpkArticle,courtExcerpt,effect343]=await Promise.all(jobs.map(p=>p.catch(()=>'')));
+  const [currentNotary,gpkArticle,courtExcerpt,effect343,stayEvidence]=
+    await Promise.all(jobs.map(p=>p.catch(()=>'')));
   return ("\nДОПОЛНИТЕЛЬНЫЕ ПРОЦЕССУАЛЬНЫЕ ИСТОЧНИКИ ПО ИСПОЛНИТЕЛЬНОЙ НАДПИСИ.\n"+
     "Следующие тексты запрошены отдельно от архивного анализа, поскольку вопросы совершения нотариального действия и обращения в суд могут относиться к разным датам. "+
     "Проверь историческую применимость, процессуальное исчисление и переходные положения. "+
     "В особенности разграничивай 10 РАБОЧИХ дней для возражения нотариусу и отдельный судебный срок; не считай их одним сроком.\n"+
     (effect343?"\n"+effect343+"\n":"\nЗакон № 343-VIII — проверка точного срока не состоялась.\n")+
+    (stayEvidence?"\n"+stayEvidence+"\n":"")+
     (currentNotary?"\nЗАКОН О НОТАРИАТЕ — ТЕКСТ ОФИЦИАЛЬНОЙ СТРАНИЦЫ НА ДАТУ ЗАГРУЗКИ (не редакция 2024 года):\n"+
       currentNotary.slice(0,6400):"\nАктуальный текст статьи 92-8 не получен; не выдавай его за проверенный.")+
     (gpkArticle?"\nГПК РК — СТАТЬЯ 364, ТЕКСТ С ОФИЦИАЛЬНОЙ СТРАНИЦЫ:\n"+
       gpkArticle.slice(0,4800):"\nТекст статьи 364 ГПК не получен; не утверждай проверку её срока.")+
     (courtExcerpt?"\n"+courtExcerpt.slice(0,4600):"\nТекст НП ВС № 6 не получен; не утверждай проверку его положений.")
-  ).slice(0,17500);
+  ).slice(0,23500);
 }
