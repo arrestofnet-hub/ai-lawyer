@@ -16,7 +16,7 @@ export function isNotarialInscriptionQuestion(query){
   return /(?:исполнител\p{L}{0,10}\s+надпис\p{L}*|нотари\p{L}*\s+надпис\p{L}*)/iu.test(s);
 }
 export function extractCourtInstruction(html){
-  if(typeof html!=="string"||html.length<800||html.length>MAX_BYTES)
+  if(typeof html!=="string"||html.length<350||html.length>MAX_BYTES)
     throw Error("Unreliable official normative resolution");
   const section=html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
   if(!section)throw Error("Official resolution text missing");
