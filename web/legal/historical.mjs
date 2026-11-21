@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import {selectProvisionSources} from "./sources.mjs";
 import {parseOfficialArticles,specificNumbers} from "./live-official.mjs";
 import {buildAmendmentReviewContext} from "./amendment-review.mjs";
+import {getPublicationReviewContext} from "./publication.mjs";
 
 const MAX_HTML=5_000_000;
 function isoFromDate(s){
@@ -76,7 +77,7 @@ async function readOfficialPage(url,fetchImpl){
   return Buffer.concat(parts).toString("utf8");
 }
 export async function getHistoricalOfficialContext(officialRegistry,query,{
-  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10)
+  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10),publicationReview=true
 }={}){
   const hint=historicalDateHint(query,{asOf});
   if(!hint.historical||process.env.LIVE_OFFICIAL_LAW_ENABLED==="0")
@@ -136,6 +137,18 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
     priorDate:revision.prior,nextDate:revision.next,
     priorHtml:archivePage.html,priorArticles:articles,nextHtml,nextArticles
   });
+  let publicationContext="";
+  if(publicationReview){
+    try{
+      publicationContext=await getPublicationReviewContext({
+        actId:source.actId,articleNumbers:numberList,priorHtml:archivePage.html,
+        fetchImpl,asOf
+      });
+    }catch{
+      publicationContext="\nПроверка первой официальной публикации не выполнена;"+
+        " не заявлять о подтверждённой дате вступления поправок в силу.";
+    }
+  }
   const notes=articles.map(x=>{
     const sha=crypto.createHash("sha256").update(x.text,"utf8").digest("hex");
     return "СТАТЬЯ "+x.article+"; архив Әділет: "+archivePage.url+
@@ -146,7 +159,7 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
     "\nАРХИВНЫЕ ТЕКСТЫ ИЗ ИСТОРИИ ИЗМЕНЕНИЙ ӘДІЛЕТ; дата события: "+hint.date+
     "; архивная дата не позже события: "+revision.prior+
     (revision.next?"; следующая указанная архивная дата: "+revision.next:"")+
-    "; история: "+source.historyUrl+".\n"+caution+"\n"+review.context+"\n"+notes+
+    "; история: "+source.historyUrl+".\n"+caution+"\n"+review.context+"\n"+publicationContext+"\n"+notes+
     (missing.length?"\nНе получены архивные статьи: "+missing.join(", ")+".":"")
   ).slice(0,15000)};
 }
