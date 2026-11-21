@@ -17,7 +17,7 @@ test("guest uploads, Sol receives PDF, and registration retains encrypted attach
     "  const body=JSON.parse(opts.body);",
     "  const inputs=body.input.at(-1).content.filter(x=>x.type==='input_file');",
     "  if(inputs.some(x=>!x.file_data.startsWith('data:application/pdf;base64,')||",
-    "    !Buffer.from(x.file_data.split(',')[1],'base64').toString('utf8').startsWith('%PDF-'))",
+    "    !Buffer.from(x.file_data.split(',')[1],'base64').toString('utf8').startsWith('%PDF-'))) ",
     "    throw Error('bad PDF bytes');",
     "  return Response.json({output:[{type:'message',content:[{type:'output_text',",
     "    text:'Прочитано PDF: '+inputs.length+' — '+inputs.map(x=>x.filename).join(', ')}]}]});",
