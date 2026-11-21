@@ -34,6 +34,7 @@ test("historical engine fetches notary law archival versions instead of court re
   const urls=[];
   const result=await getHistoricalOfficialContext(registry,question,{
     asOf:"2026-11-21",
+    publicationReview:false,
     fetchImpl:async(url,options)=>{
       urls.push(url);
       assert.equal(options.redirect,"error");
