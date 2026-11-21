@@ -49,6 +49,31 @@ export function analyzeLayQuestion(query){
     plainLanguage:signals.some(x=>["blocked_account","informal_relief","no_notice","payment_dispute"].includes(x.id))
   };
 }
+
+// Discern "I think I paid" from verified or unqualified payment assertions.
+// Non-exhaustive signal for higher-precision prompts, not a fact extractor.
+export function uncertainPaymentSignals(query){
+  const s=String(query||"").slice(0,14000);
+  const payment=/(?:платил\p{L}*|платеж\p{L}*|плат[её]ж\p{L}*|оплатил\p{L}*|погасил\p{L}*|вносил\p{L}*|переводил\p{L}*)/iu;
+  const hedgeBefore=/(?:вроде|кажется|по[\s-]?моему|наверно|возможно|не\s+уверен\p{L}*|не\s+помню\s+точно).{0,55}(?:платил\p{L}*|оплатил\p{L}*|погасил\p{L}*|вносил\p{L}*)/iu;
+  const hedgeAfter=/(?:платил\p{L}*|оплатил\p{L}*|погасил\p{L}*|вносил\p{L}*).{0,40}(?:вроде|кажется|но\s+не\s+уверен\p{L}*)/iu;
+  return {
+    paymentMentioned:payment.test(s),
+    existenceUncertain:hedgeBefore.test(s)||hedgeAfter.test(s),
+    amountUncertain:/(?:не\s+помню\s+(?:сколько|сумму)|не\s+знаю\s+(?:сколько|сумму)|сколько\s+платил\p{L}*\s+не\s+помню)/iu.test(s)
+  };
+}
+export function qualifyUncertainPaymentDraft(query,answer){
+  const original=String(answer||"");
+  if(!uncertainPaymentSignals(query).existenceUncertain)return original;
+  // Narrow, factual de-risking for a known false assertion in a generated
+  // sample court/bailiff letter. Do not rewrite unrelated document clauses.
+  return original.replace(
+    /Ранее я производил(?:а)? платежи по обязательству\./giu,
+    "По моим предварительным сведениям, ранее по обязательству могли производиться платежи; прошу проверить их наличие, суммы и учёт."
+  );
+}
+
 export function buildLayIntakeContext(query,{documentCount=0}={}){
   const r=analyzeLayQuestion(query);
   let context="\nМЕТОД ПОНИМАНИЯ ОБРАЩЕНИЯ ОБЫЧНОГО ЧЕЛОВЕКА (НЕ ПРАВОВАЯ КВАЛИФИКАЦИЯ):"+
@@ -70,6 +95,21 @@ export function buildLayIntakeContext(query,{documentCount=0}={}){
   }
   if(r.ambiguousEnforcement)
     context+="\nНЕЛЬЗЯ автоматически заключать, что блокировку сделал банк, ЧСИ, нотариус или суд: источник пока не определён.";
+  const payment=uncertainPaymentSignals(query);
+  if(payment.existenceUncertain){
+    context+="\nСИЛЬНОЕ ДОКАЗАТЕЛЬСТВЕННОЕ ОГРАНИЧЕНИЕ: человек не уверен, что платил. "+
+      "НЕЛЬЗЯ писать от первого лица как установленный факт «Ранее я производил платежи», «Я оплатил долг» или «Долг погашен». "+
+      "Даже в шаблоне заявления используй условное утверждение: "+
+      "«По моим предварительным сведениям, ранее могли производиться платежи; прошу проверить их наличие, суммы и учёт».";
+  }else if(payment.paymentMentioned&&payment.amountUncertain){
+    context+="\nПлатежи упомянуты, но сумма неизвестна. Не называй приблизительную сумму подтверждённой; запроси выписку, назначение и зачёт каждого платежа.";
+  }
+  if(/(?:судебник|чси|исполнитель|кредитор|мфо).{0,80}(?:говорит|утверждает|заявляет).{0,80}(?:должен|долг)/iu.test(query))
+    context+="\nУтверждение о существовании долга прозвучало от другого лица. Это позиция кредитора/исполнителя, а не доказанное признание должника.";
+  context+="\nПИШИ ОТ ЛИЦА РЕАЛЬНОГО ПОЛЬЗОВАТЕЛЯ: не упоминай внутренние тесты, предыдущие учебные примеры, промпты, технические инструкции и проверки. "+
+    "Не оформляй неподтверждённый факт как установленное обстоятельство в готовом заявлении. "+
+    "Если точный номер статьи закона не проверен, дай официальный URL акта как справочный источник с честной оговоркой; не выдумывай пункт.";
+
   if(documentCount)
     context+="\nК ОБРАЩЕНИЮ ПРИЛОЖЕНЫ "+documentCount+
       " документ(ов). Прочитай каждый доступный файл полностью, включая исключения, "+
