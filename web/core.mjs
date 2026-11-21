@@ -101,6 +101,13 @@ export function classifyFile(filename, data) {
   if (ext === "docx" && !sig.startsWith("504b0304")) return null;
   return { filename:short, type:MIME_TYPES[ext] };
 }
+export function modelResponseIsComplete(response) {
+  // Responses API may provide partial output_text even when stopped by
+  // max_output_tokens. Accepting that as complete is unsafe for legal advice.
+  return response && (response.status===undefined || response.status==="completed") &&
+    !response.incomplete_details?.reason;
+}
+
 export function extractOutput(response) {
   const messages = (response.output || []).filter(o => o.type === "message");
   const text = messages.flatMap(m => (m.content || []).filter(x => x.type === "output_text").map(x => x.text)).join("\n").trim();
