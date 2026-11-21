@@ -3,11 +3,11 @@
 // edition had entered into force on the date of the user's events.
 import crypto from "node:crypto";
 import {selectProvisionSources} from "./sources.mjs";
+import {extractOfficialArticleBlocks} from "./article-boundaries.mjs";
 
 const OFFICIAL_HOSTS=new Set(["adilet.zan.kz","old.adilet.zan.kz"]);
 const PAGE_CACHE=new Map();
 const CACHE_MS=10*60*1000;
-const ARTICLE_HEADING=/<p\b[^>]*>\s*<b\b[^>]*>\s*(?:<a\b[^>]*\bname=["'](z\d+)["'][^>]*>\s*<\/a>\s*)?Статья\s+(\d+(?:-\d+)?)\.\s*[^<]{3,180}<\/b>\s*<\/p>/gi;
 const ENTITY_MAP={nbsp:" ",amp:"&",quot:'"',apos:"'",lt:"<",gt:">",
   laquo:"«",raquo:"»",mdash:"—",ndash:"–",hellip:"…"};
 function decodeEntities(s){
@@ -31,24 +31,16 @@ function plainHtml(html){
     .replace(/\n{3,}/g,"\n\n")).trim();
 }
 export function parseOfficialArticles(html,articleNumbers){
-  if(typeof html!=="string"||html.length<500||html.length>8500000)
-    throw Error("Invalid official page length");
-  // Only the main legal article; ignore page chrome and navigation.
-  const part=html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
-  if(!part||part.length<300)throw Error("Official article container missing");
-  const headings=[...part.matchAll(ARTICLE_HEADING)];
-  if(headings.length<2)throw Error("Full official act text required");
+  const blocks=extractOfficialArticleBlocks(html);
   const wanted=new Set(articleNumbers.map(String));
   const found=[];
-  for(let i=0;i<headings.length;i++){
-    const h=headings[i],number=h[2];
+  for(const block of blocks){
+    const number=block.article;
     if(!wanted.has(number))continue;
-    const next=headings[i+1]?.index??part.length;
-    const raw=part.slice(h.index,next);
-    const text=plainHtml(raw);
+    const text=plainHtml(block.html);
     if(!text.startsWith("Статья "+number+".")||text.length<100||text.length>6500||
        /\nСтатья\s+\d+(?:-\d+)?\./.test(text.slice(25)))continue;
-    found.push({article:number,anchor:h[1]||null,text,
+    found.push({article:number,anchor:block.anchor,text,
       sha256:crypto.createHash("sha256").update(text,"utf8").digest("hex")});
   }
   return found;

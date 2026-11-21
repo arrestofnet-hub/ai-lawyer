@@ -2,8 +2,8 @@
 // Historical snapshots and footnotes are EVIDENCE, not legal-effectiveness
 // decisions. Never infer effective dates from archive modification dates.
 import crypto from "node:crypto";
+import {extractOfficialArticleBlocks} from "./article-boundaries.mjs";
 
-const HEADING=/<p\b[^>]*>\s*<b\b[^>]*>\s*(?:<a\b[^>]*\bname=["']z\d+["'][^>]*>\s*<\/a>\s*)?Статья\s+(\d+(?:-\d+)?)\.\s*[^<]{3,180}<\/b>\s*<\/p>/gi;
 const ID_RX=/^Z[A-Za-z0-9_]{6,30}$/;
 function clean(s){
   return String(s||"").replace(/<br\s*\/?>/gi," ").replace(/<[^>]*>/g," ")
@@ -27,29 +27,46 @@ export function classifyEntryRule(note){
       reason:"Требуется открыть статью о введении изменяющего закона в действие и проверить исключения"};
   return {kind:"not_established",verified:false,reason:"Начало действия поправки из этой сноски не установлено"};
 }
+// On some Әділет archive pages a single footnote is split across several
+// <span class="note"> elements with <a> links BETWEEN the spans. Extract the
+// whole logical note through its <br>, not just its first span.
+function articleFootnoteHtml(block){
+  const notes=[];
+  const paraRx=/<p\b(?=[^>]*\bclass=["'][^"']*\bnote\b[^"']*["'])[^>]*>[\s\S]*?<\/p>/gi;
+  for(const m of block.matchAll(paraRx)){
+    if(/^\s*Сноска\./iu.test(clean(m[0])))notes.push(m[0]);
+  }
+  const spanRx=/<span\b(?=[^>]*\bclass=["'][^"']*\bnote\b[^"']*["'])[^>]*>([\s\S]*?)<\/span>/gi;
+  for(const m of block.matchAll(spanRx)){
+    if(!/^\s*Сноска\./iu.test(clean(m[1])))continue;
+    const tail=block.slice(m.index,m.index+4000);
+    const br=tail.match(/<br\s*\/?>/i);
+    const para=tail.slice(m[0].length).match(/<p\b/i);
+    const nextPara=para?m[0].length+para.index:-1;
+    const cutoff=br&&(!para||br.index<nextPara)
+      ?br.index+br[0].length:nextPara>=0?nextPara:m[0].length;
+    notes.push(tail.slice(0,cutoff));
+  }
+  return notes;
+}
 export function extractArticleAmendmentNotes(html,articleNumbers,{actId}={}){
-  if(typeof html!=="string"||html.length<500||html.length>5000000)
-    throw Error("Invalid official article HTML");
-  const body=html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
-  if(!body)throw Error("Missing official article section");
-  const headings=[...body.matchAll(HEADING)];
-  if(headings.length<2)throw Error("Incomplete official article structure");
+  const blocks=extractOfficialArticleBlocks(html,{maxBytes:5000000});
   const wanted=new Set(articleNumbers.map(String));
   const result=[];
-  for(let i=0;i<headings.length;i++){
-    const head=headings[i],number=head[1];
+  for(const block of blocks){
+    const number=block.article;
     if(!wanted.has(number))continue;
-    const block=body.slice(head.index,headings[i+1]?.index??body.length);
-    // Only "Сноска" entries that occur inside the requested article.
-    const notes=[...block.matchAll(/<(p|span)\b[^>]*\bclass=["'][^"']*\bnote\b[^"']*["'][^>]*>([\s\S]*?)<\/\1>/gi)];
-    for(const entry of notes){
-      const raw=entry[2],text=clean(raw);
+    for(const raw of articleFootnoteHtml(block.html)){
+      const text=clean(raw);
       if(!/Сноска\./iu.test(text))continue;
+      // Chapter, section and paragraph headings are not an amendment of the
+      // preceding article even when a page has malformed structural markup.
+      if(/Сноска\.\s*(?:Заголовок\s+)?(?:глав[аы]|раздел[аы]|параграф[аы])\b/iu.test(text))
+        continue;
       const ids=new Set();
       for(const link of raw.matchAll(/href=["'](?:https:\/\/(?:old\.)?adilet\.zan\.kz)?\/rus\/docs\/([A-Z][A-Za-z0-9_]{5,30})(?:#[^"']+)?["']/gi)){
         if(ID_RX.test(link[1])&&link[1]!==actId)ids.add(link[1]);
       }
-      // Do not claim that every act in a footnote changed this exact clause.
       if(!ids.size)continue;
       const kind=classifyEntryRule(text);
       result.push({article:number,amendingActIds:[...ids].slice(0,10),
