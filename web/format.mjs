@@ -31,6 +31,9 @@ export function parseLegalMarkdown(input) {
   while(i<lines.length){
     const current=lines[i];
     if(!current.trim()){i++;continue;}
+    if(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(current)){
+      blocks.push({kind:"rule"});i++;continue;
+    }
     if(/^\s*`{3}/.test(current)){
       i++;const out=[];
       while(i<lines.length&&!/^\s*`{3}/.test(lines[i])) out.push(lines[i++]);
@@ -75,6 +78,7 @@ export function parseLegalMarkdown(input) {
 export function plainLegalText(markdown) {
   const result=[];
   for(const block of parseLegalMarkdown(markdown)){
+    if(block.kind==="rule")continue;
     if(block.kind==="table"){
       result.push(block.headers.join("\t"));
       for(const row of block.rows)result.push(row.join("\t"));
