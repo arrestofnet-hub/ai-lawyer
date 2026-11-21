@@ -61,7 +61,7 @@ export function parseAmendingLawEnactment(actHtml,{actId}={}){
   const excerpt=tail.map(p=>p.text).join("\n");
   if(!/Настоящий\s+Закон\s+вводится\s+в\s+действие/iu.test(excerpt))
     throw Error("No enactment clause in legislative text");
-  const baseMatch=excerpt.match(/по\s+истечении\s+(\w+)\s+календарных\s+дней\s+после\s+дня\s+его\s+первого\s+официального\s+опубликования/iu);
+  const baseMatch=excerpt.match(/по\s+истечении\s+([\p{L}]+)\s+календарных\s+дней\s+после\s+дня\s+его\s+первого\s+официального\s+опубликования/iu);
   const spelled={"десяти":10,"шестидесяти":60,"тридцати":30};
   const calendarDays=baseMatch?(spelled[baseMatch[1].toLowerCase()]??null):null;
   const exceptions=tail.map(p=>p.text)
