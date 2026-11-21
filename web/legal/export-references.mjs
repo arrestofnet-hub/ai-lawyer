@@ -25,7 +25,11 @@ export function officialExportReferences(markdown, modelSources=[]){
       if(new RegExp("(?<!\\d)"+number+"(?!\\d)","u").test(text))
         add("ГПК РК, статья "+number,ACT_BASE+GPK+fragment);
     }
-    if(refs.length===before)add("ГПК РК — общий официальный текст (статья не установлена)",ACT_BASE+GPK);
+    // A generic mention of the acronym alone does not establish that the
+    // paragraph is a legal source list. Provide act-level link only in an
+    // explicit source list or a substantive legal description.
+    if(refs.length===before && /(?:Официальн\p{L}*\s+(?:акты|источники)|Закон\s+об\s+исполнительн\p{L}*\s+производств|Закон\s+[«"']О\s+нотариате|судебн\p{L}*\s+(?:обжалован\p{L}*|разбирательств\p{L}*)|процессуальн\p{L}*\s+срок)/iu.test(text))
+      add("ГПК РК — общий официальный текст (статья не установлена)",ACT_BASE+GPK);
   }
   if(/нотариат|нотариальн\p{L}*|исполнительн\p{L}*\s+надпис/iu.test(text)){
     for(const n of ["92-6","92-8"]){
