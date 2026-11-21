@@ -75,16 +75,39 @@ export function parseLegalMarkdown(input) {
   return blocks;
 }
 
+// In model text each action may be rendered "1." if explanatory source
+// paragraphs interrupt the list. Normalize numbering in exported documents,
+// while retaining a section break when a new heading or unrelated paragraph
+// starts. Do not change the underlying stored model answer.
+export function numberedExportBlocks(markdown){
+  const blocks=parseLegalMarkdown(markdown);
+  let counter=0;
+  return blocks.map(block=>{
+    if(block.kind==="ordered"){
+      const numbers=block.items.map(()=>++counter);
+      return {...block,numbers};
+    }
+    if(["heading","rule","table","code","quote","bullets"].includes(block.kind)){
+      counter=0;
+    }else if(block.kind==="paragraph"){
+      const text=String(block.text||"").trim();
+      if(!/^(?:(?:Источник(?:ы)?|Норма|Статья|ГПК|НП\s+ВС|См\.|Ссылка)(?:\b|\s|:)|https?:\/\/)/iu.test(text))
+        counter=0;
+    }
+    return block;
+  });
+}
+
 export function plainLegalText(markdown) {
   const result=[];
-  for(const block of parseLegalMarkdown(markdown)){
+  for(const block of numberedExportBlocks(markdown)){
     if(block.kind==="rule")continue;
     if(block.kind==="table"){
       result.push(block.headers.join("\t"));
       for(const row of block.rows)result.push(row.join("\t"));
       result.push("");
     } else if(block.kind==="ordered"||block.kind==="bullets"){
-      block.items.forEach((item,i)=>result.push((block.kind==="ordered"?(i+1)+". ":"• ")+item));
+      block.items.forEach((item,i)=>result.push((block.kind==="ordered"?(block.numbers?.[i]||i+1)+". ":"• ")+item));
       result.push("");
     } else {
       result.push(plainText(block.text),"");

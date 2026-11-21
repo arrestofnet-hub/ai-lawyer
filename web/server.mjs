@@ -32,6 +32,7 @@ import {loadArticleSnapshots,retrieveArticleSnapshots,buildArticleSnapshotContex
 import {getLiveOfficialArticleContext} from "./legal/live-official.mjs";
 import {getTimelineOfficialContext} from "./legal/historical.mjs";
 import {getNotarialCompanionContext} from "./legal/notary-procedure.mjs";
+import {buildLayIntakeContext,enrichLayLegalSearchQuery} from "./legal/issue-intake.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8791);
@@ -39,7 +40,8 @@ const ORIGIN = String(process.env.PUBLIC_ORIGIN || "http://localhost:" + PORT).r
 const KEY = dataKey(process.env.DATA_KEY);
 const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data"), KEY);
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
-const practiceMethods=fs.readFileSync(path.join(dirname,"strategy","LEGAL_PRACTICE_METHODS_V3.md"),"utf8");
+const practiceMethods=fs.readFileSync(path.join(dirname,"strategy","LEGAL_PRACTICE_METHODS_V3.md"),"utf8")+
+  "\n\n"+fs.readFileSync(path.join(dirname,"strategy","LEGAL_REASONING_METHODS_V4.md"),"utf8");
 const playbooks = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_PLAYBOOKS_V1.md"), "utf8");
 // This empty-by-default corpus can only contain source-dated official legal
 // passages; do not invent laws when no reviewed passages have been imported.
@@ -371,7 +373,7 @@ async function askModel(payload) {
     webCalls:Array.isArray(data.output)?data.output.filter(x=>x.type==="web_search_call").length:0 };
 }
 async function baseRequest(caseData, history, message, docs, mode, creditAccount=false,freeTier=false) {
-  const legalQuery=message+" "+(caseData.objective||"");
+  const legalQuery=enrichLayLegalSearchQuery(message+" "+(caseData.objective||""));
   const matchingActs=selectOfficialSources(officialSources,legalQuery,{max:6})
     .map(x=>x.actId);
   const [historic,proceduralContext]=await Promise.all([
@@ -380,7 +382,8 @@ async function baseRequest(caseData, history, message, docs, mode, creditAccount
   ]);
   const liveNormContext=historic.historical?historic.context:
     await getLiveOfficialArticleContext(officialSources,legalQuery);
-  const localNormContext=liveNormContext+proceduralContext+buildLegalContext(localNorms,legalQuery)+
+  const localNormContext=buildLayIntakeContext(message,{documentCount:docs.length})+
+    liveNormContext+proceduralContext+buildLegalContext(localNorms,legalQuery)+
     buildArticleSnapshotContext(officialArticleSnapshots,legalQuery,{
       limit:3,relatedActIds:matchingActs
     })+

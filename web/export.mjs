@@ -6,7 +6,7 @@ import {
   WidthType
 } from "docx";
 import { PDFDocument } from "pdfkit";
-import { parseLegalMarkdown, inlineTokens, plainText } from "./format.mjs";
+import { numberedExportBlocks, inlineTokens, plainText } from "./format.mjs";
 import {officialExportReferences} from "./legal/export-references.mjs";
 
 const cm=28.3464566929;
@@ -24,14 +24,14 @@ function p(text,{bold=false,indent=true,after=115}={}) {
   });
 }
 export async function exportDocx(markdown,{sources=[]}={}) {
-  const blocks=parseLegalMarkdown(markdown);
+  const blocks=numberedExportBlocks(markdown);
   const content=[];
   for(const block of blocks) {
     if(block.kind==="heading") {
       content.push(p(block.text,{bold:true,indent:false,after:150}));
     } else if(block.kind==="ordered"||block.kind==="bullets") {
       block.items.forEach((item,i)=>{
-        const prefix=block.kind==="ordered"?String(i+1)+". ":"• ";
+        const prefix=block.kind==="ordered"?String(block.numbers?.[i]||i+1)+". ":"• ";
         content.push(p(prefix+item,{indent:false,after:65}));
       });
     } else if(block.kind==="table") {
@@ -158,10 +158,10 @@ export async function exportPdf(markdown,{sources=[]}={}) {
     }
     pdf.moveDown(0.45);
   }
-  for(const block of parseLegalMarkdown(markdown)){
+  for(const block of numberedExportBlocks(markdown)){
     if(block.kind==="heading")sectionText(block.text,{heading:true});
     else if(block.kind==="ordered"||block.kind==="bullets"){
-      block.items.forEach((t,i)=>sectionText(t,{prefix:block.kind==="ordered"?(i+1)+". ":"• "}));
+      block.items.forEach((t,i)=>sectionText(t,{prefix:block.kind==="ordered"?(block.numbers?.[i]||i+1)+". ":"• "}));
     }
     else if(block.kind==="table")drawTable(block);
     else if(block.kind==="rule"){
@@ -176,25 +176,36 @@ export async function exportPdf(markdown,{sources=[]}={}) {
   }
   const officialRefs=officialExportReferences(markdown,sources);
   if(officialRefs.length){
-    ensurePage(85);
-    pdf.moveDown(0.6);
+    // Preserve bibliography as one block whenever it can fit on a new page:
+    // the previous implementation stranded a two-link header on page 7.
+    pdf.font("main").fontSize(9.3);
+    const entryHeights=officialRefs.map(item=>
+      pdf.heightOfString(item.label+": "+item.url,{
+        width:usableWidth,align:"left",lineGap:1
+      })+5);
+    const totalHeight=60+entryHeights.reduce((a,b)=>a+b,0);
+    const pageContentHeight=pdf.page.height-4.5*cm;
+    const remaining=pdf.page.height-2*cm-pdf.y;
+    if(totalHeight<=pageContentHeight && totalHeight>remaining)pdf.addPage();
+    else ensurePage(65);
+    pdf.moveDown(0.35);
     pdf.font("bold").fontSize(11).fillColor("#151515")
       .text("Официальные источники для сверки редакции",marginLeft,pdf.y,{
         width:usableWidth,align:"left"
       });
-    pdf.moveDown(0.22);
+    pdf.moveDown(0.15);
     pdf.font("main").fontSize(9).fillColor("#151515")
       .text("Ссылки указаны справочно. Дату действия редакции необходимо проверить отдельно.",{
         width:usableWidth,align:"left"
       });
-    pdf.moveDown(0.25);
+    pdf.moveDown(0.18);
     for(const item of officialRefs){
-      ensurePage(50);
-      pdf.font("main").fontSize(10).fillColor("#151515");
+      ensurePage(entryHeights[officialRefs.indexOf(item)]+4);
+      pdf.font("main").fontSize(9.3).fillColor("#151515");
       pdf.text(item.label+": "+item.url,marginLeft,pdf.y,{
         width:usableWidth,align:"left",lineGap:1,link:item.url
       });
-      pdf.moveDown(0.16);
+      pdf.moveDown(0.1);
     }
   }
   pdf.end();
