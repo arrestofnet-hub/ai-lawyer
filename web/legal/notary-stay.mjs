@@ -32,14 +32,29 @@ export function parseCivilProcedureStayProvisions(html){
   const block=(n)=>blocks.find(x=>x.article===String(n))?.html||"";
   const b156=block(156),b157=block(157),b158=block(158);
   if(!b156||!b157||!b158)throw Error("GPK articles 156–158 not present");
+  // Article 157 on the official 2026 page has no heading anchor.
+  // Link to the first paragraph id (z1078 in that edition), not a
+  // fabricated #z157 fragment.
+  const first157Body=b157.slice(b157.indexOf("</p>")+4);
+  const article157Anchor=blocks.find(x=>x.article==="157")?.anchor||
+    first157Body.match(/<p\b[^>]*\bid=["'](z\d+)["']/i)?.[1]||null;
   const p156=paragraphs(b156);
   const clause=p156.find(x=>/^6\)\s*приостановление\s+взыскания\s+по\s+исполнительному\s+документу/iu.test(x)&&
     /оспариваемому\s+(?:ответчиком|должником)\s+в\s+судебном\s+порядке/iu.test(x));
   const p157=paragraphs(b157);
   const filing=p157.find(x=>/^1\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
     /в\s+день\s+(?:вынесения\s+определения\s+о\s+возбуждении|его\s+поступления)/iu.test(x));
-  const decision=p157.find(x=>/^2\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
-    /без\s+извещения\s+лиц/iu.test(x)&&/(?:выносит|вынес[а-яё]+)\s+определение/iu.test(x));
+  // In the real Әділет HTML article 157(2) is split into two <p>
+  // elements: paragraph 2 states "без извещения лиц", and the immediately
+  // following paragraph states "судья выносит определение". Do not require
+  // these independent sentences to appear in one HTML paragraph.
+  const decisionIndex=p157.findIndex(x=>
+    /^2\.\s*Заявление\s+об\s+обеспечении\s+иска/iu.test(x)&&
+    /без\s+извещения\s+лиц/iu.test(x));
+  const decisionPart=decisionIndex<0?"":p157.slice(decisionIndex,decisionIndex+2).join(" ");
+  const decision=/(?:выносит|вынес[а-яё]+)\s+определение\s+об\s+обеспечении\s+иска/iu.test(decisionPart)
+    &&/об\s+отказе\s+в\s+удовлетворении\s+заявления/iu.test(decisionPart)
+    ?decisionPart:null;
   const p158=paragraphs(b158);
   const delivery=p158.find(x=>/^2\)\s*в\s+соответствующий\s+орган\s+юстиции\s+либо\s+в\s+региональную\s+палату/iu.test(x)&&
     /приостановления\s+исполнительного\s+производства/iu.test(x)&&
@@ -48,7 +63,7 @@ export function parseCivilProcedureStayProvisions(html){
     throw Error("Relevant GPK procedure fragments missing");
   return {article156:clause,article157:filing+"\n"+decision,
     article158:delivery,urls:{
-      article156:GPK+"#z156",article157:GPK+"#z157",article158:GPK+"#z158"
+      article156:GPK+"#z156",article157:GPK+(article157Anchor?"#"+article157Anchor:""),article158:GPK+"#z158"
     }};
 }
 async function loadOfficial(url,fetchImpl){
@@ -116,3 +131,17 @@ export async function getNotarialCollectionStayContext({
     "Не обещай, что обеспечительные меры будут приняты автоматически.";
   return context.slice(0,8600);
 }
+
+// Machine-checkable status based on complete official-source excerpts;
+// a casual mention of "статьи 158" in an instructional paragraph must
+// NEVER count as verification.
+export function getNotarialStayEvidenceStatus(context){
+  const c=String(context||"");
+  return {
+    article156:/\nГПК РК, подпункт 6\) части 1 статьи 156\. Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/K1500000377#z156\. Норма: 6\) приостановление взыскания по исполнительному документу/iu.test(c),
+    article157:/\nГПК РК, статья 157 \(порядок рассмотрения\)\. Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/K1500000377(?:#z\d+)?\. Норма: 1\. Заявление об обеспечении иска[\s\S]*?без извещения лиц[\s\S]*?выносит определение об обеспечении иска/iu.test(c),
+    article158:/\nГПК РК, подпункт 2\) части 1 статьи 158 \(адресат судебного определения\)\. Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/K1500000377#z158\. Норма: 2\) в соответствующий орган юстиции либо в региональную палату/iu.test(c),
+    supremeCourt:/\nНормативное постановление ВС № 6 от 26\.05\.2022,[\s\S]*?Источник: https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/P220000006S#z24\. Текст: Если на момент подачи жалобы/iu.test(c)
+  };
+}
+

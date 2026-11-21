@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {fileURLToPath} from "node:url";
 import {loadOfficialRegistry} from "../legal/sources.mjs";
 import {parseCivilProcedureStayProvisions,parseCourtStayProvisions,
-  getNotarialCollectionStayContext} from "../legal/notary-stay.mjs";
+  getNotarialCollectionStayContext,getNotarialStayEvidenceStatus} from "../legal/notary-stay.mjs";
 import {getNotarialCompanionContext} from "../legal/notary-procedure.mjs";
 
 const registry=loadOfficialRegistry(fileURLToPath(new URL("../legal/official-sources.json",import.meta.url)));
@@ -15,9 +15,10 @@ const gpk="<html><article>"+
   "<p>5) приостановление действия оспариваемого акта уполномоченного органа в строго предусмотренных законодательством случаях;</p>"+
   "<p>6) приостановление взыскания по исполнительному документу, оспариваемому ответчиком в судебном порядке;</p>"+
   "<p>8) приостановление оспариваемых актов и действий судебного исполнителя, связанных с обращением взыскания на имущество, совершаемых в исполнительном производстве.</p>"+
-  "<p><b><a name='z157'></a>Статья 157. Рассмотрение заявления об обеспечении иска</b></p>"+
-  "<p>1. Заявление об обеспечении иска рассматривается и разрешается судьей в день вынесения определения о возбуждении гражданского дела, если оно было приложено к иску или об этом указано в иске. В остальных случаях заявление об обеспечении иска разрешается судьей в день его поступления в суд.</p>"+
-  "<p>2. Заявление об обеспечении иска рассматривается и разрешается судьей без извещения лиц, участвующих в деле, без проведения судебного заседания. По результатам рассмотрения заявления судья выносит определение об обеспечении иска или об отказе в удовлетворении заявления.</p>"+
+  "<p><b>Статья 157. Рассмотрение заявления об обеспечении иска</b></p>"+
+  "<p id='z1078'>1. Заявление об обеспечении иска рассматривается и разрешается судьей в день вынесения определения о возбуждении гражданского дела, если оно было приложено к иску или об этом указано в иске. В остальных случаях заявление об обеспечении иска разрешается судьей в день его поступления в суд.</p>"+
+  "<p id='z1079'>2. Заявление об обеспечении иска рассматривается и разрешается судьей без извещения лиц, участвующих в деле, без проведения судебного заседания.</p>"+
+  "<p>По результатам рассмотрения заявления судья выносит определение об обеспечении иска или об отказе в удовлетворении заявления.</p>"+
   "<p><b><a name='z158'></a>Статья 158. Исполнение определения об обеспечении иска</b></p>"+
   "<p>1. Определение суда направляется судом или вручается лицу, заявившему ходатайство, для немедленного представления уполномоченным органам.</p>"+
   "<p>2) в соответствующий орган юстиции либо в региональную палату частных судебных исполнителей по территориальности для приостановления исполнительного производства в случаях, предусмотренных подпунктами 6), 8) части первой статьи 156 настоящего Кодекса;</p>"+
@@ -46,6 +47,7 @@ test("GPK articles 156(1)(6),157,158(1)(2) are separately and accurately extract
   assert.match(x.article157,/без извещения лиц/);
   assert.match(x.article158,/региональную палату частных судебных исполнителей/);
   assert.match(x.urls.article156,/K1500000377#z156/);
+  assert.match(x.urls.article157,/K1500000377#z1078/);
 });
 test("only exact Supreme Court stay statement is extracted; no invented bailiff power",()=>{
   const x=parseCourtStayProvisions(np);
@@ -70,6 +72,9 @@ test("integrated judicial stay context has all official sources and no automatic
   assert.match(text,/Нормативное постановление ВС № 6/);
   assert.match(text,/жалоба и ходатайство сами по себе НЕ приостанавливают исполнение/i);
   assert.match(text,/орган юстиции/);
+  assert.deepEqual(getNotarialStayEvidenceStatus(text),{
+    article156:true,article157:true,article158:true,supremeCourt:true
+  });
 });
 test("unavailable source is explicitly marked unverified; partial context remains",async()=>{
   const text=await getNotarialCollectionStayContext({
@@ -81,6 +86,23 @@ test("unavailable source is explicitly marked unverified; partial context remain
   assert.match(text,/подпункт 6\) части 1 статьи 156/);
   assert.match(text,/не подтверждено/);
 });
+test("word SUCCESS is not assigned merely because fallback text mentions GPK art 158",()=>{
+  const fallback="СТАТЬИ 156–158 ГПК: точные положения официального текста не получены. "+
+    "Нельзя утверждать, что конкретные подпункты проверены. "+
+    "В судебном порядке применимы нормы статьи 158, если они подтверждены.";
+  assert.deepEqual(getNotarialStayEvidenceStatus(fallback),{
+    article156:false,article157:false,article158:false,supremeCourt:false
+  });
+});
+
+test("article 157 order paragraph cannot be borrowed from an unrelated article",()=>{
+  const altered=gpk.replace(
+    "<p>По результатам рассмотрения заявления судья выносит определение об обеспечении иска или об отказе в удовлетворении заявления.</p>",
+    "<p>Настоящий вопрос суд рассматривает в порядке гражданского судопроизводства без какого-либо дополнительного решения.</p>");
+  assert.throws(()=>parseCivilProcedureStayProvisions(altered),
+    /Relevant GPK procedure fragments missing/);
+});
+
 test("companion source fetches same official URLs only once despite two consumers",async()=>{
   const called=[];
   const text=await getNotarialCompanionContext(registry,
