@@ -17,10 +17,11 @@ function runs(text) {
     bold:token.kind==="strong",italics:token.kind==="em",
   }));
 }
-function p(text,{bold=false,indent=true,after=115}={}) {
+function p(text,{bold=false,indent=true,after=115,keepNext=false}={}) {
   return new Paragraph({
     children:bold?[new TextRun({text:plainText(text),bold:true,font:"Times New Roman",size:28})]:runs(text),
     spacing:{line:322,after}, indent:indent?{firstLine:709}:undefined,
+    keepNext,
   });
 }
 export async function exportDocx(markdown,{sources=[]}={}) {
@@ -54,9 +55,16 @@ export async function exportDocx(markdown,{sources=[]}={}) {
   }
   const officialRefs=officialExportReferences(markdown,sources);
   if(officialRefs.length){
-    content.push(p("Официальные источники для сверки редакции:",{indent:false,bold:true,after:55}));
-    content.push(p("Приведены справочно; дата действия каждой нормы определяется отдельно.",{indent:false,after:55}));
-    for(const r of officialRefs){
+    // Keep the evidence bibliography together if space is available,
+    // otherwise let Word begin a clearly headed source appendix.
+    // Avoid orphaning three hyperlinks alone on an almost blank page.
+    content.push(p("Официальные источники для сверки редакции:",{
+      indent:false,bold:true,after:55,keepNext:true
+    }));
+    content.push(p("Приведены справочно; дата действия каждой нормы определяется отдельно.",{
+      indent:false,after:55,keepNext:true
+    }));
+    for(const [index,r] of officialRefs.entries()){
       content.push(new Paragraph({
         children:[
           new TextRun({text:r.label+": ",font:"Times New Roman",size:22}),
@@ -64,7 +72,8 @@ export async function exportDocx(markdown,{sources=[]}={}) {
             new TextRun({text:r.url,style:"Hyperlink",font:"Times New Roman",size:22})
           ],link:r.url})
         ],
-        spacing:{line:280,after:70}
+        spacing:{line:280,after:70},
+        keepNext:index<officialRefs.length-1
       }));
     }
   }
