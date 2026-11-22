@@ -7,6 +7,7 @@ import {selectProvisionSources} from "./sources.mjs";
 import {parseOfficialArticles,specificNumbers,isCivilAssignmentQuestion} from "./live-official.mjs";
 import {buildAmendmentReviewContext} from "./amendment-review.mjs";
 import {getPublicationReviewContext} from "./publication.mjs";
+import {getGk2025Law179ImpactContext} from "./gk-2025-enactment.mjs";
 
 const MAX_HTML=5_000_000;
 function isoFromDate(s){
@@ -195,7 +196,8 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
 // six), but only fetch each DISTINCT archived edition once. This avoids
 // comparing only the last two dates and silently omitting the agreement.
 export async function getCivilAssignmentArchiveTimeline(officialRegistry,query,{
-  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10)
+  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10),
+  lawImpactReview=false
 }={}){
   if(!isCivilAssignmentQuestion(query)||process.env.LIVE_OFFICIAL_LAW_ENABLED==="0")
     return null;
@@ -281,6 +283,9 @@ export async function getCivilAssignmentArchiveTimeline(officialRegistry,query,{
       }
     }
   }
+  if(lawImpactReview&&editionDates.includes("2025-04-09")){
+    context+=await getGk2025Law179ImpactContext({fetchImpl});
+  }
   context+="\nОТДЕЛЬНО ОТ ДОСЛОВНОГО СРАВНЕНИЯ: на даты событий юридическая "+
     "применимость и даты вступления поправок в силу не проверены. "+
     "Указанные источники являются официальными архивными версиями, "+
@@ -303,7 +308,7 @@ export async function getTimelineOfficialContext(officialRegistry,query,{
     fetchImpl,asOf,publicationReview
   });
   const cession=await getCivilAssignmentArchiveTimeline(officialRegistry,query,{
-    fetchImpl,asOf
+    fetchImpl,asOf,lawImpactReview:publicationReview
   });
   if(cession)return cession;
   // Two dates are the normal case; limit automatic source reads and clearly

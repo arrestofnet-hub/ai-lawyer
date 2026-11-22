@@ -24,8 +24,18 @@ export function addDays(ymd,days){
   return date.toISOString().slice(0,10);
 }
 export function parseOfficialPublicationMetadata(infoHtml,{actId}={}){
+  const hasLegacyTable=/id=["']ethernatable["']/i.test(String(infoHtml));
+  // Some genuine official Әділет /info pages use an unmarked HTML table.
+  // For the 09.04.2025 amending law, require BOTH matching law identity
+  // and the specific 179-VIII registration number before trusting such rows.
+  const hasIdentifiedModernTable=actId==="Z2500000179"&&
+    /О внесении изменений и дополнений[\s\S]{0,300}охраны и использования водного фонда/iu.test(infoHtml||"")&&
+    /Закон Республики Казахстан от 9 апреля 2025 года №\s*179-VIII/iu.test(infoHtml||"")&&
+    /Регистрационный номер НПА, присвоенный нормотворческим органом/iu.test(infoHtml||"")&&
+    /<table\b/iu.test(infoHtml||"");
   if(!ACT.test(actId||"")||typeof infoHtml!=="string"||infoHtml.length<250||infoHtml.length>MAX_PAGE||
-     !/id=["']ethernatable["']/i.test(infoHtml))throw Error("Unreliable official publication metadata");
+     !(hasLegacyTable||hasIdentifiedModernTable))
+    throw Error("Unreliable official publication metadata");
   const rows=[...infoHtml.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi)];
   const publicationRow=rows.find(x=>
     normalizeText(x[0]).includes("Информация об официальном опубликовании акта"));
