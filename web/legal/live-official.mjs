@@ -76,6 +76,11 @@ async function fetchPage(url,fetchImpl){
   const u=new URL(url);
   if(u.protocol!=="https:"||!OFFICIAL_HOSTS.has(u.hostname)||
      u.username||u.password||u.port||u.search||u.hash)throw Error("Untrusted source");
+  // A compare fallback is only authorized for the GK General Part.
+  // Never follow arbitrary comparison links from documents or user inputs.
+  if(u.pathname.endsWith("/compare")&&
+     u.pathname!=="/rus/docs/K940001000_/compare")
+    throw Error("Unapproved comparison page");
   const useCache=fetchImpl===globalThis.fetch;
   const cached=useCache?PAGE_CACHE.get(url):null;
   if(cached&&cached.until>Date.now())return cached.text;
@@ -118,24 +123,38 @@ export async function getLiveOfficialArticleContext(officialRegistry,query,{
   if(!jobs.length)return "";
   const {source,numbers}=jobs[0];
   let extracts=[],from="";
-  for(const host of ["old.adilet.zan.kz","adilet.zan.kz"]){
+  const canonicalOld=officialPageUrl(source,"old.adilet.zan.kz");
+  const canonicalNew=officialPageUrl(source,"adilet.zan.kz");
+  const candidates=source.id==="gk-general"?
+    [canonicalOld,canonicalOld+"/compare",canonicalNew]:
+    [canonicalOld,canonicalNew];
+  for(const url of candidates){
     try{
-      const url=officialPageUrl(source,host);
       const html=await fetchPage(url,fetchImpl);
-      extracts=parseOfficialArticles(html,numbers);
-      if(extracts.length){from=url;break;}
-    }catch{ /* Network failures must not break a paid consultation. */ }
+      const candidate=parseOfficialArticles(html,numbers);
+      // Keep the most complete verified extraction, not a later partial
+      // or an HTML table-of-contents misidentified as an article.
+      if(candidate.length>extracts.length){
+        extracts=candidate;from=url;
+      }
+      if(extracts.length===numbers.length)break;
+    }catch{ /* Network/parser failures must not break a paid consultation. */ }
   }
   if(!extracts.length)return "\nПРОВЕРКА ОФИЦИАЛЬНОГО ИСТОЧНИКА: онлайн-текст нужных статей Әділет недоступен. "+
     "Не говори, что проверил статьи или сроки по сайту. Покажи официальный URL "+
     source.officialUrl+" и запроси сверку текста и редакции.\n";
   const missing=numbers.filter(n=>!extracts.some(x=>x.article===n));
+  const compareNotice=from.endsWith("/compare")?
+    "\nВНИМАНИЕ: статьи извлечены с официальной СРАВНИТЕЛЬНОЙ страницы Әділет. "+
+    "Это источник для сверки текста, НЕ доказательство, что именно эта редакция "+
+    "действовала на дату события. Для правового вывода нужна проверка "+
+    "исторической редакции и переходных положений.\n":"\n";
   return ("\nОНЛАЙН-ИЗВЛЕЧЕНИЕ ИЗ ОФИЦИАЛЬНОЙ ПУБЛИКАЦИИ ӘДІЛЕТ. "+
     "Дата получения страницы: "+asOf+". Это фактически полученный текст, "+
     "НО НЕ ПРОВЕРКА ДАТЫ ВСТУПЛЕНИЯ В СИЛУ И НЕ ИСТОРИЧЕСКАЯ РЕДАКЦИЯ. "+
     "Для событий в прошлом проверь историю и переходные положения. "+
     "Указывай точную статью и официальный URL для каждого извлечённого правила. "+
-    "Не утверждай, что URL проверен на другую дату.\n"+
+    "Не утверждай, что URL проверен на другую дату.\n"+compareNotice+
     extracts.map(x=>"СТАТЬЯ "+x.article+"; акт: "+source.title+
       "; официальный адрес: "+source.officialUrl+(x.anchor?"#"+x.anchor:"")+
       "; источник фактической загрузки: "+from+
