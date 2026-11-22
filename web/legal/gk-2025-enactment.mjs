@@ -24,11 +24,11 @@ export function parseGk2025Law179Scope(html){
   // code by both its link and its visible numbered heading.
   const paragraphs=[...articleOne.matchAll(/<p\b[^>]*>[\s\S]*?<\/p>/gi)];
   const civil=paragraphs.find(p=>p[0].includes("/rus/docs/K940001000_") &&
-    /^1\.\s*В\s+Гражданский кодекс\b/iu.test(textOnly(p[0])));
+    /^1\.\s*В\s+Гражданский кодекс(?:\s|$)/iu.test(textOnly(p[0])));
   if(!civil)throw Error("Civil Code amendment subitem not located");
   const land=paragraphs.find(p=>p.index>civil.index &&
     p[0].includes("/rus/docs/K030000442_") &&
-    /^2\.\s*В\s+Земельный кодекс\b/iu.test(textOnly(p[0])));
+    /^2\.\s*В\s+Земельный кодекс(?:\s|$)/iu.test(textOnly(p[0])));
   if(!land||land.index-civil.index>15000)
     throw Error("Amendment scope boundary unconfirmed");
   const scope=textOnly(articleOne.slice(civil.index,land.index));
