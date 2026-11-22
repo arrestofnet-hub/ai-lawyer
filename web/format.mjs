@@ -87,14 +87,19 @@ export function numberedExportBlocks(markdown){
       const numbers=block.items.map(()=>++counter);
       return {...block,numbers};
     }
-    if(["heading","rule","table","code","quote","bullets"].includes(block.kind)){
+    // Bullets inside the first numbered request enumerate attachments or
+    // evidence, NOT a fresh top-level list. Preserve the outer counter.
+    // This fixes "ПРОШУ: 1. ...; • document; • document; 1. ...; 2. ..."
+    // to "ПРОШУ: 1. ...; • document; • document; 2. ...; 3. ...".
+    if(["heading","rule","table","code","quote"].includes(block.kind)){
       counter=0;
     }else if(block.kind==="paragraph"){
-      // Explanatory paragraphs often sit between numbered actions in one
-      // section: e.g. "1. Ask Kaspi", "Clarify the order", "1. Ask the
-      // bailiff". A paragraph isn't a new list/section boundary; only a
-      // structural heading, table, rule or a different list kind resets it.
-      // Keep numbers continuous until a new structural section begins.
+      const t=String(block.text||"").trim();
+      // Court/agency request label usually arrives as an unmarked standalone
+      // paragraph, not a Markdown heading. It starts a new top-level list.
+      if(/^(?:ПРОШУ|ПРОСИМ|ХОДАТАЙСТВУЮ|ТРЕБУЮ|ПРИЛОЖЕНИЯ)\s*[:：]?$/iu.test(t)||
+         /^(?:I|II|III|IV|V|VI|VII|VIII|IX|X)\.\s+[^\n]+$/iu.test(t))
+        counter=0;
     }
     return block;
   });
