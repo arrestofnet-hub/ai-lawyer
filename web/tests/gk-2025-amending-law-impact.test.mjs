@@ -41,6 +41,17 @@ test("Law 179-VIII amends GK 193-1 and 242, not 339-346, despite another act's a
   assert.throws(()=>parseGk2025Law179Scope(law.replace("статьи 242","статьи 342")));
 });
 
+test("Adilet archive HTML with nonbreaking-space indentation preserves legal scope",()=>{
+  const archiveLike=law
+    .replace('<p id="z5">1. В','<p id="z5">\\n&nbsp;&nbsp;&nbsp; 1. В')
+    .replace('<p id="z11">2. В','<p id="z11">\\n&nbsp;&nbsp;&nbsp; 2. В');
+  const x=parseGk2025Law179Scope(archiveLike);
+  assert.deepEqual(x.changedArticles,["193-1","242"]);
+  assert.doesNotMatch(x.scopeExcerpt,/земельного законодательства/);
+  assert.throws(()=>parseGk2025Law179Scope(
+    archiveLike.replace("статьи 242","статьи 342")));
+});
+
 test("identified unmarked official info gives April 10 first publication, never trust wrong act",()=>{
   const p=parseOfficialPublicationMetadata(info,{actId:"Z2500000179"});
   assert.equal(p.firstReportedPublication,"2025-04-10");
