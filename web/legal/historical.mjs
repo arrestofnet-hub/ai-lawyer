@@ -190,6 +190,105 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
 }
 
 
+// For assignment disputes several events may occur on either side of
+// an official amendment-history date. Read every relevant event date (up to
+// six), but only fetch each DISTINCT archived edition once. This avoids
+// comparing only the last two dates and silently omitting the agreement.
+export async function getCivilAssignmentArchiveTimeline(officialRegistry,query,{
+  fetchImpl=fetch,asOf=new Date().toISOString().slice(0,10)
+}={}){
+  if(!isCivilAssignmentQuestion(query)||process.env.LIVE_OFFICIAL_LAW_ENABLED==="0")
+    return null;
+  const all=[...new Set([...String(query).matchAll(
+    /(?<!\d)(?:\d{2}\.\d{2}\.20\d{2}|20\d{2}-\d{2}-\d{2})(?!\d)/g
+  )].map(m=>isoFromDate(m[0])).filter(date=>date&&date<=asOf))].sort();
+  if(all.length<2)return null;
+  const dates=all.slice(0,6),skipped=all.slice(6);
+  const source=officialRegistry.find(x=>x.id==="gk-general"&&x.actId==="K940001000_");
+  if(!source)return null;
+  const actId=source.actId;
+  const historyUrl="https://old.adilet.zan.kz/rus/docs/"+actId+"/history";
+  const warning="\nПРАВОВОЕ ОГРАНИЧЕНИЕ: дата архивной версии Әділет отражает "+
+    "изменение текста, а НЕ удостоверяет дату вступления каждой поправки "+
+    "в силу и её применение к прошлым правоотношениям. Для окончательного "+
+    "заключения проверить изменяющие законы, официальные публикации, "+
+    "исключения, переходные положения и возможную обратную силу.\n";
+  let history,observations;
+  try{
+    history=parseOfficialHistory(await readOfficialPage(historyUrl,fetchImpl),actId);
+    observations=dates.map(date=>({
+      eventDate:date,...chooseArchiveRevision(history,date)
+    }));
+    if(observations.some(x=>!x.prior))throw Error("Missing prior archive");
+  }catch{
+    return {historical:true,comparedDates:dates,otherDates:skipped,context:
+      "\nПРОВЕРКА АРХИВОВ ГК ПО ДАТАМ СОБЫТИЙ НЕ ЗАВЕРШЕНА. "+
+      "Не подменять редакции сегодняшним текстом. "+
+      "Нужная официальная история: "+historyUrl+
+      "; рассматриваемые даты: "+dates.join(", ")+warning};
+  }
+  const articlesWanted=["339","341","342","343","345","346"];
+  const editionDates=[...new Set(observations.map(x=>x.prior))];
+  const editions=await Promise.all(editionDates.map(async date=>{
+    const url="https://old.adilet.zan.kz/rus/archive/docs/"+actId+"/"+
+      ddmmyyyy(date);
+    try{
+      const page=await readOfficialPage(url,fetchImpl);
+      const extracted=parseOfficialArticles(page,articlesWanted);
+      const missing=articlesWanted.filter(n=>!extracted.some(a=>a.article===n));
+      return {date,url,articles:extracted,missing};
+    }catch{
+      return {date,url,articles:[],missing:articlesWanted};
+    }
+  }));
+  const byEdition=new Map(editions.map(x=>[x.date,x]));
+  const aligned=articlesWanted.map(n=>{
+    const list=editions.map(e=>e.articles.find(a=>a.article===n)||null);
+    return {number:n,list,complete:list.every(Boolean),
+      identical:list.every(a=>a&&a.text===list[0]?.text)};
+  });
+  let context="\nАРХИВНЫЕ РЕДАКЦИИ ГК РК (ОБЩАЯ ЧАСТЬ) ПО СОБЫТИЯМ УСТУПКИ. "+
+    "Официальная история: "+historyUrl+
+    ". Сопоставлялись события: "+dates.join(", ")+".\n"+
+    observations.map(x=>"- Событие "+x.eventDate+": архивная версия "+
+      x.prior+(x.next?"; следующая версия "+x.next:"")+
+      "; источник "+byEdition.get(x.prior)?.url).join("\n")+"\n"+
+    (skipped.length?"Другие даты в вопросе не проверены автоматически: "+
+      skipped.join(", ")+".\n":"")+
+    warning+
+    "\nСТАТЬИ ИЗ ОФИЦИАЛЬНЫХ АРХИВНЫХ ТЕКСТОВ (НЕ ПОДТВЕРЖДЁННЫЕ ПО ДАТЕ ВСТУПЛЕНИЯ В СИЛУ):\n";
+  for(const x of aligned){
+    if(!x.complete){
+      context+="\nСтатья "+x.number+": не извлечена из всех выбранных "+
+        "архивных редакций. Нельзя делать вывод о совпадении текстов.\n";
+      continue;
+    }
+    if(x.identical){
+      const evidence=editions.map((e,i)=>e.url+
+        (x.list[i].anchor?"#"+x.list[i].anchor:"")).join("; ");
+      context+="\nСТАТЬЯ "+x.number+
+        ": текст совпадает в выбранных архивных версиях ("+
+        editionDates.join(", ")+"). Адреса: "+evidence+
+        ". SHA256: "+x.list[0].sha256+"\n"+x.list[0].text+"\n";
+    }else{
+      context+="\nСТАТЬЯ "+x.number+
+        ": ТЕКСТЫ РАЗЛИЧАЮТСЯ; отдельно изучи действие каждой поправки.\n";
+      for(let i=0;i<editions.length;i++){
+        const a=x.list[i],e=editions[i];
+        context+="Версия "+e.date+"; URL "+e.url+
+          (a.anchor?"#"+a.anchor:"")+
+          "; SHA256 "+a.sha256+"\n"+a.text+"\n";
+      }
+    }
+  }
+  context+="\nОТДЕЛЬНО ОТ ДОСЛОВНОГО СРАВНЕНИЯ: на даты событий юридическая "+
+    "применимость и даты вступления поправок в силу не проверены. "+
+    "Указанные источники являются официальными архивными версиями, "+
+    "но не заменяют юридической проверки изменяющих законов.";
+  return {historical:true,comparedDates:dates,otherDates:skipped,
+    archiveDates:editionDates,context:context.slice(0,20500)};
+}
+
 // A single case commonly contains several legally distinct dates: the
 // notarial act, purported delivery, and later discovery by a bailiff.
 // Resolve their possible article editions separately. Never use an arbitrary
@@ -203,6 +302,10 @@ export async function getTimelineOfficialContext(officialRegistry,query,{
   if(dates.length<=1)return getHistoricalOfficialContext(officialRegistry,query,{
     fetchImpl,asOf,publicationReview
   });
+  const cession=await getCivilAssignmentArchiveTimeline(officialRegistry,query,{
+    fetchImpl,asOf
+  });
+  if(cession)return cession;
   // Two dates are the normal case; limit automatic source reads and clearly
   // flag unselected dates instead of silently treating them as irrelevant.
   const targets=dates.slice(-2);
