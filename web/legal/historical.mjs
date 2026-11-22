@@ -4,7 +4,7 @@
 // Does not store raw case messages or fetch user-supplied URLs.
 import crypto from "node:crypto";
 import {selectProvisionSources} from "./sources.mjs";
-import {parseOfficialArticles,specificNumbers} from "./live-official.mjs";
+import {parseOfficialArticles,specificNumbers,isCivilAssignmentQuestion} from "./live-official.mjs";
 import {buildAmendmentReviewContext} from "./amendment-review.mjs";
 import {getPublicationReviewContext} from "./publication.mjs";
 
@@ -35,15 +35,38 @@ export function historicalDateHint(query,{asOf=new Date().toISOString().slice(0,
   return {historical:false,date:null,reason:"undated"};
 }
 export function parseOfficialHistory(html,actId){
-  if(typeof html!=="string"||html.length<200||html.length>MAX_HTML||
-     !/id=["']ethernatable["']/i.test(html))throw Error("Official history table missing");
+  if(typeof html!=="string"||html.length<200||html.length>MAX_HTML)
+    throw Error("Invalid official history page");
   if(!/^[A-Z][A-Za-z0-9_]{5,30}$/.test(actId))throw Error("Invalid act");
+  const hasTableId=/id=["']ethernatable["']/i.test(html);
+  // The official 1994 GK history page has also been observed with a
+  // plain row-based "История изменений" table after HTML normalization:
+  // № | Заголовок | Форма НПА | Официальная публикация |
+  // Дата изменения | Статус НПА. Requiring only ethernatable + hrefs
+  // wrongly rejects these legitimate date rows.
+  const isGkHistory=actId==="K940001000_"&&
+    /Гражданский кодекс Республики Казахстан/i.test(html)&&
+    /(?:27 декабря 1994 года|268-XIII)/i.test(html)&&
+    /История изменений/i.test(html)&&/<table\b/i.test(html);
+  if(!hasTableId&&!isGkHistory)throw Error("Official history table missing");
   const rx=/href=["'](\/rus\/archive\/docs\/[A-Z][A-Za-z0-9_]{5,30}\/\d{2}\.\d{2}\.\d{4})["']/gi;
   const dates=new Set();
   for(const m of html.matchAll(rx)){
     const parts=m[1].split("/");
     if(parts[4]!==actId)continue;
     const d=isoFromDate(parts[5]);if(d)dates.add(d);
+  }
+  if(dates.size<2&&isGkHistory){
+    // Extract dates only from rows unambiguously identifying the 1994 GK,
+    // never from arbitrary dates in the page or the title/footer.
+    for(const row of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)){
+      const cells=[...row[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)]
+        .map(m=>m[1].replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/g," ")
+          .replace(/\s+/g," ").trim());
+      if(cells.length<6||!/Гражданский кодекс Республики Казахстан/i.test(cells[1])||
+         !/27 декабря 1994 года/i.test(cells[2]))continue;
+      const d=isoFromDate(cells[4]);if(d)dates.add(d);
+    }
   }
   if(dates.size<2||dates.size>400)throw Error("Unreliable official history list");
   return [...dates].sort();
@@ -63,7 +86,7 @@ async function readOfficialPage(url,fetchImpl){
     throw Error("Untrusted historical source");
   const response=await fetchImpl(url,{method:"GET",redirect:"error",
     headers:{accept:"text/html,application/xhtml+xml"},
-    signal:AbortSignal.timeout(7000)});
+    signal:AbortSignal.timeout(url.includes("K940001000_")?16000:7000)});
   if(!response.ok||!/text\/html|application\/xhtml\+xml/i.test(response.headers.get("content-type")||""))
     throw Error("Official historical page unavailable");
   if(Number(response.headers.get("content-length")||0)>MAX_HTML||!response.body)
@@ -82,8 +105,10 @@ export async function getHistoricalOfficialContext(officialRegistry,query,{
   const hint=historicalDateHint(query,{asOf});
   if(!hint.historical||process.env.LIVE_OFFICIAL_LAW_ENABLED==="0")
     return {historical:false,context:""};
-  const source=selectProvisionSources(officialRegistry,query,{max:3})
-    .find(x=>specificNumbers(query,x).length);
+  const source=(isCivilAssignmentQuestion(query)?
+    officialRegistry.find(x=>x.id==="gk-general"):null)||
+    selectProvisionSources(officialRegistry,query,{max:3})
+      .find(x=>specificNumbers(query,x).length);
   if(!source)return {historical:true,context:
     "\nИСТОРИЧЕСКИЙ ПРАВОВОЙ ВОПРОС. Нужный акт/статья не определены по каталогу. "+
     "Не применять сегодняшние выдержки как право на дату события.\n"};
