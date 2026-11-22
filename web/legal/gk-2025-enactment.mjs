@@ -20,13 +20,18 @@ export function parseGk2025Law179Scope(html){
   const articleOne=body.slice(0,body.search(/Статья\s+2\./iu));
   // Locate EXACT GK amendment subitem within article 1; the next numbered
   // subitem changes the Land Code, not the Civil Code.
-  const m=articleOne.match(/<p\b[^>]*>\s*1\.\s*В\s*<a\s+href=["']\/rus\/docs\/K940001000_[^"']*["'][^>]*>[\s\S]*?<\/p>/i);
-  if(!m)throw Error("Civil Code amendment subitem not located");
-  const start=m.index;
-  const tail=articleOne.slice(start+m[0].length);
-  const next=tail.search(/<p\b[^>]*>\s*2\.\s*В\s*<a\s+href=["']\/rus\/docs\/K030000442_/i);
-  if(next<0||next>15000)throw Error("Amendment scope boundary unconfirmed");
-  const scope=textOnly(articleOne.slice(start,start+m[0].length+next));
+  // Decode whitespace and tags per paragraph, then match the referenced
+  // code by both its link and its visible numbered heading.
+  const paragraphs=[...articleOne.matchAll(/<p\b[^>]*>[\s\S]*?<\/p>/gi)];
+  const civil=paragraphs.find(p=>p[0].includes("/rus/docs/K940001000_") &&
+    /^1\.\s*В\s+Гражданский кодекс\b/iu.test(textOnly(p[0])));
+  if(!civil)throw Error("Civil Code amendment subitem not located");
+  const land=paragraphs.find(p=>p.index>civil.index &&
+    p[0].includes("/rus/docs/K030000442_") &&
+    /^2\.\s*В\s+Земельный кодекс\b/iu.test(textOnly(p[0])));
+  if(!land||land.index-civil.index>15000)
+    throw Error("Amendment scope boundary unconfirmed");
+  const scope=textOnly(articleOne.slice(civil.index,land.index));
   // Only recognize explicit statutory-article references within this
   // source subsection. Fail closed if the expected identities disappear.
   const changed=[...new Set([...scope.matchAll(
