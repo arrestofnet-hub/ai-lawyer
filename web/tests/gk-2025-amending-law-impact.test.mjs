@@ -43,8 +43,8 @@ test("Law 179-VIII amends GK 193-1 and 242, not 339-346, despite another act's a
 
 test("Adilet archive HTML with nonbreaking-space indentation preserves legal scope",()=>{
   const archiveLike=law
-    .replace('<p id="z5">1. В','<p id="z5">\\n&nbsp;&nbsp;&nbsp; 1. В')
-    .replace('<p id="z11">2. В','<p id="z11">\\n&nbsp;&nbsp;&nbsp; 2. В');
+    .replace('<p id="z5">1. В','<p id="z5">&nbsp;&nbsp;&nbsp; 1. В')
+    .replace('<p id="z11">2. В','<p id="z11">&nbsp;&nbsp;&nbsp; 2. В');
   const x=parseGk2025Law179Scope(archiveLike);
   assert.deepEqual(x.changedArticles,["193-1","242"]);
   assert.doesNotMatch(x.scopeExcerpt,/земельного законодательства/);
