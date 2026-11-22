@@ -29,10 +29,10 @@ export function parseOfficialPublicationMetadata(infoHtml,{actId}={}){
   // For the 09.04.2025 amending law, require BOTH matching law identity
   // and the specific 179-VIII registration number before trusting such rows.
   const hasIdentifiedModernTable=actId==="Z2500000179"&&
-    /О внесении изменений и дополнений[\\s\\S]{0,300}охраны и использования водного фонда/iu.test(infoHtml||"")&&
-    /Закон Республики Казахстан от 9 апреля 2025 года №\\s*179-VIII/iu.test(infoHtml||"")&&
+    /О внесении изменений и дополнений[\s\S]{0,300}охраны и использования водного фонда/iu.test(infoHtml||"")&&
+    /Закон Республики Казахстан от 9 апреля 2025 года №\s*179-VIII/iu.test(infoHtml||"")&&
     /Регистрационный номер НПА, присвоенный нормотворческим органом/iu.test(infoHtml||"")&&
-    /<table\\b/iu.test(infoHtml||"");
+    /<table\b/iu.test(infoHtml||"");
   if(!ACT.test(actId||"")||typeof infoHtml!=="string"||infoHtml.length<250||infoHtml.length>MAX_PAGE||
      !(hasLegacyTable||hasIdentifiedModernTable))
     throw Error("Unreliable official publication metadata");
