@@ -1,0 +1,18 @@
+[Unit]
+Description=AI Lawyer support mailbox test worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=ai-lawyer-support
+StateDirectoryMode=0700
+LoadCredential=mail.json:/etc/ai-lawyer-support.json
+ExecStart=/usr/bin/python3 /opt/ai-lawyer-support/support_worker.py
+TimeoutStartSec=90
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+UMask=0077

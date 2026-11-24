@@ -1,0 +1,11 @@
+[Unit]
+Description=Check AI Lawyer support mailbox once per minute (test mode)
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=ai-lawyer-support.service
+
+[Install]
+WantedBy=timers.target
