@@ -27,6 +27,7 @@ import {
   randomId, classifyFile, extractOutput, modelResponseIsComplete, buildMessages, strategyInstruction,
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
+import {listOrders} from "./payments.mjs";
 import {modelResponseSettings} from "./model-response-budget.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
 import {blankDossier,validateDossier,dossierView,dossierPromptContext} from "./legal/dossier.mjs";
@@ -745,6 +746,10 @@ async function api(req,res,url) {
     if (token) store.db.sessions=store.db.sessions.filter(s=>s.hash!==tokenHash(token));
     store.save(); res.setHeader("set-cookie",sessionCookie("",0));
     return json(res,200,{ok:true});
+  }
+  if (req.method === "GET" && p === "/chat/api/payments/orders") {
+    const u=requireUser(req);
+    return json(res,200,{orders:listOrders(store,u.id)});
   }
   if (req.method === "GET" && p === "/chat/api/cases") {
     const u=requireUser(req);
