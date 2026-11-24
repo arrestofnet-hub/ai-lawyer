@@ -2,6 +2,7 @@ import http from "node:http";
 import {randomBytes,randomUUID,timingSafeEqual} from "node:crypto";
 import {adminAuthorized,balanceOf,displayTokens,PUBLIC_TOKEN_MULTIPLIER} from "./referrals.mjs";
 import {sumEstimatedProviderCost} from "./pricing.mjs";
+import {currentPackages,freeBudget,settingsVersion,updateCommercialSettings} from "./commercial-settings.mjs";
 
 const escapeHtml=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=n=>Number(n||0).toLocaleString("ru-RU");
@@ -108,7 +109,17 @@ function grantForm(user,csrf){
     '<label>Причина <input name="reason" minlength="3" maxlength="160" required placeholder="Без личных данных"></label>'+
     '<button type="submit">Подтвердить начисление</button></form></details>';
 }
-export function renderAdmin(db,{query="",page=1,enabled=false,at=Date.now(),csrf="",notice=""}={}){
+function commercialPanel(db,csrf,enabled,defaultBudget){
+ const common='<input type="hidden" name="csrf" value="'+escapeHtml(csrf)+'"><input type="hidden" name="version" value="'+settingsVersion(db)+'">';
+ const reason='<label>Причина <input name="reason" required minlength="3" maxlength="160"></label><button type="submit">Сохранить</button>';
+ const budget=freeBudget(db,defaultBudget);
+ const budgetForm=csrf?'<form method="post" action="/settings">'+common+'<input type="hidden" name="kind" value="budget"><label>Порог USD <input name="usd" type="number" min="0" max="1000" step="0.01" required value="'+budget+'"></label>'+reason+'</form>':"";
+ const cards=currentPackages(db).map(p=>'<article><small>'+escapeHtml(p.name)+'</small><strong>'+num(p.priceKzt)+' ₸</strong><p>'+num(p.tokens)+' токенов</p>'+
+ (csrf&&!enabled?'<form method="post" action="/settings">'+common+'<input type="hidden" name="kind" value="package"><input type="hidden" name="id" value="'+escapeHtml(p.id)+'"><label>Цена ₸ <input name="priceKzt" type="number" min="1" max="1000000" step="1" required value="'+p.priceKzt+'"></label><label>Токены <input name="tokens" type="number" min="100" max="10000000" step="100" required value="'+p.tokens+'"></label>'+reason+'</form>':"")+'</article>').join("");
+ const rows=(db.commercialSettingsLog||[]).slice(-30).reverse().map(x=>"<tr><td>"+escapeHtml(x.kind)+"</td><td>"+escapeHtml(JSON.stringify(x.before))+"</td><td>"+escapeHtml(JSON.stringify(x.after))+"</td><td>"+escapeHtml(x.reason)+"</td><td>"+escapeHtml(x.at)+"</td></tr>").join("");
+ return '<h2>Настройки бесплатного API-бюджета</h2><p>Учтенный расход: '+usd(sumEstimatedProviderCost(db.providerUsage,true))+' / '+usd(budget)+'. Порог за весь учтенный период, не месячный и не жесткий банковский лимит. Не учитывает неотраженные расходы и запросы в процессе. 0 отключает новые бесплатные запросы.</p>'+budgetForm+'<h2>Тарифные пакеты</h2><p>Изменения касаются новых заказов. Ранее созданные заказы и балансы сохраняются. При включенной оплате редактирование пакетов заблокировано.</p><section class="tiles">'+cards+'</section><h2>Журнал настроек</h2><div class="table"><table><thead><tr><th>Раздел</th><th>До</th><th>После</th><th>Причина</th><th>UTC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5">Нет изменений</td></tr>')+'</tbody></table></div>';
+}
+export function renderAdmin(db,{query="",page=1,enabled=false,at=Date.now(),csrf="",notice="",defaultBudget=15}={}){
   const s=adminSummary(db,at),q=String(query).trim().slice(0,120).toLowerCase();
   const matching=(db.users||[]).filter(u=>!q||String(u.email||"").toLowerCase().includes(q)||String(u.id||"").toLowerCase().includes(q));
   const maxPage=Math.max(1,Math.ceil(matching.length/50));
@@ -129,9 +140,9 @@ export function renderAdmin(db,{query="",page=1,enabled=false,at=Date.now(),csrf
   const emails=new Map((db.users||[]).map(u=>[u.id,u.email]));
   const accessAudit=(db.adminAccessLog||[]).slice(-50).reverse().map(x=>"<tr><td>"+escapeHtml(emails.get(x.userId)||x.userId)+"</td><td>"+(x.action==="block"?"Блокировка":"Разблокировка")+"</td><td>"+escapeHtml(x.reason)+"</td><td>"+escapeHtml(x.at)+"</td></tr>").join("");
   const audit=(db.adminBonusGrants||[]).slice(-50).reverse().map(x=>"<tr><td>"+escapeHtml(emails.get(x.userId)||x.userId)+"</td><td>"+num(x.tokens)+"</td><td>"+escapeHtml(x.reason)+"</td><td>"+escapeHtml(x.at)+"</td></tr>").join("");
-  return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Lawyer — администрирование</title><style>body{font:15px system-ui,sans-serif;color:#203047;background:#f5f7fa;margin:0;padding:24px}main{max-width:1200px;margin:auto}h1{font-size:25px}h2{font-size:19px;margin-top:28px}.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}article{padding:16px;background:white;border:1px solid #dce3eb;border-radius:8px}strong{display:block;font-size:22px;margin-top:8px}.table{overflow:auto;background:white;border:1px solid #dce3eb;border-radius:8px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:10px;border-bottom:1px solid #e5e9ef;white-space:nowrap}input,button{font:inherit;padding:8px}a{color:#235e96}small,p{color:#526174}</style></head><body><main><h1>AI Lawyer Kazakhstan — администрирование</h1><p>Закрытая панель. Ручные начисления — только бесплатные бонусы. Оплата: '+(enabled?"включена":"отключена")+'. <a href="/">Обновить</a></p><p role="status">'+escapeHtml(notice)+'</p><section class="tiles">'+tiles+'</section><p>Суммы API — расчётные по сохраненным данным usage, не банковский баланс и не окончательный счет OpenAI. Оплаты — валовая сумма записей со статусом paid, не чистая прибыль.</p><h2>Пользователи</h2><form method="get" action="/"><input name="q" maxlength="120" placeholder="Email или ID" value="'+escapeHtml(q)+'"><button>Найти</button></form><p>Найдено: '+num(matching.length)+' · Страница '+page+' / '+maxPage+(page>1?' · <a href="'+href(page-1)+'">Назад</a>':'')+(page<maxPage?' · <a href="'+href(page+1)+'">Далее</a>':'')+'</p><div class="table"><table><thead><tr><th>Email</th><th>Тип</th><th>Токены</th><th>Регистрация (UTC)</th><th>Учтенные расходы API</th><th>Действия</th></tr></thead><tbody>'+(rows||'<tr><td colspan="6">Нет записей</td></tr>')+'</tbody></table></div><h2>Последние 50 бонусных начислений</h2><div class="table"><table><thead><tr><th>Аккаунт</th><th>Токены</th><th>Причина</th><th>Время (UTC)</th></tr></thead><tbody>'+(audit||'<tr><td colspan="4">Нет начислений</td></tr>')+'</tbody></table></div><h2>Последние 50 изменений доступа</h2><div class="table"><table><thead><tr><th>Аккаунт</th><th>Действие</th><th>Причина</th><th>Время (UTC)</th></tr></thead><tbody>'+(accessAudit||'<tr><td colspan="4">Нет изменений</td></tr>')+'</tbody></table></div><h2>Последние 100 заказов</h2><div class="table"><table><thead><tr><th>Заказ</th><th>Пакет</th><th>Сумма</th><th>Провайдер</th><th>Статус</th><th>Дата (UTC)</th></tr></thead><tbody>'+(orders||'<tr><td colspan="6">Нет заказов</td></tr>')+'</tbody></table></div></main></body></html>';
+  return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Lawyer — администрирование</title><style>body{font:15px system-ui,sans-serif;color:#203047;background:#f5f7fa;margin:0;padding:24px}main{max-width:1200px;margin:auto}h1{font-size:25px}h2{font-size:19px;margin-top:28px}.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}article{padding:16px;background:white;border:1px solid #dce3eb;border-radius:8px}strong{display:block;font-size:22px;margin-top:8px}.table{overflow:auto;background:white;border:1px solid #dce3eb;border-radius:8px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:10px;border-bottom:1px solid #e5e9ef;white-space:nowrap}input,button{font:inherit;padding:8px}a{color:#235e96}small,p{color:#526174}</style></head><body><main><h1>AI Lawyer Kazakhstan — администрирование</h1><p>Закрытая панель. Ручные начисления — только бесплатные бонусы. Оплата: '+(enabled?"включена":"отключена")+'. <a href="/">Обновить</a></p><p role="status">'+escapeHtml(notice)+'</p><section class="tiles">'+tiles+'</section><p>Суммы API — расчётные по сохраненным данным usage, не банковский баланс и не окончательный счет OpenAI. Оплаты — валовая сумма записей со статусом paid, не чистая прибыль.</p>'+commercialPanel(db,csrf,enabled,defaultBudget)+'<h2>Пользователи</h2><form method="get" action="/"><input name="q" maxlength="120" placeholder="Email или ID" value="'+escapeHtml(q)+'"><button>Найти</button></form><p>Найдено: '+num(matching.length)+' · Страница '+page+' / '+maxPage+(page>1?' · <a href="'+href(page-1)+'">Назад</a>':'')+(page<maxPage?' · <a href="'+href(page+1)+'">Далее</a>':'')+'</p><div class="table"><table><thead><tr><th>Email</th><th>Тип</th><th>Токены</th><th>Регистрация (UTC)</th><th>Учтенные расходы API</th><th>Действия</th></tr></thead><tbody>'+(rows||'<tr><td colspan="6">Нет записей</td></tr>')+'</tbody></table></div><h2>Последние 50 бонусных начислений</h2><div class="table"><table><thead><tr><th>Аккаунт</th><th>Токены</th><th>Причина</th><th>Время (UTC)</th></tr></thead><tbody>'+(audit||'<tr><td colspan="4">Нет начислений</td></tr>')+'</tbody></table></div><h2>Последние 50 изменений доступа</h2><div class="table"><table><thead><tr><th>Аккаунт</th><th>Действие</th><th>Причина</th><th>Время (UTC)</th></tr></thead><tbody>'+(accessAudit||'<tr><td colspan="4">Нет изменений</td></tr>')+'</tbody></table></div><h2>Последние 100 заказов</h2><div class="table"><table><thead><tr><th>Заказ</th><th>Пакет</th><th>Сумма</th><th>Провайдер</th><th>Статус</th><th>Дата (UTC)</th></tr></thead><tbody>'+(orders||'<tr><td colspan="6">Нет заказов</td></tr>')+'</tbody></table></div></main></body></html>';
 }
-export function createAdminDashboard(store,{secret,enabled=false,isBusy=()=>false}={}){
+export function createAdminDashboard(store,{secret,enabled=false,isBusy=()=>false,defaultBudget=15}={}){
   if(!/^[a-f0-9]{64}$/i.test(String(secret||"")))throw Error("Admin dashboard key not configured");
   const csrf=randomBytes(32).toString("hex");
   return http.createServer(async(req,res)=>{
@@ -145,7 +156,7 @@ export function createAdminDashboard(store,{secret,enabled=false,isBusy=()=>fals
       return res.end("Unauthorized");
     }
     const url=new URL(req.url,"http://127.0.0.1");
-    if(req.method==="POST"&&["/bonus","/access"].includes(url.pathname)){
+    if(req.method==="POST"&&["/bonus","/access","/settings"].includes(url.pathname)){
       if(req.headers.origin!=="http://"+req.headers.host||
          (req.headers["sec-fetch-site"]&&req.headers["sec-fetch-site"]!=="same-origin")){
         res.writeHead(403);return res.end("Forbidden origin");
@@ -161,6 +172,11 @@ export function createAdminDashboard(store,{secret,enabled=false,isBusy=()=>fals
         if(!/^[a-f0-9]{64}$/.test(supplied)||!timingSafeEqual(Buffer.from(supplied,"hex"),Buffer.from(csrf,"hex"))){
           res.writeHead(403);return res.end("Invalid CSRF token");
         }
+        if(url.pathname==="/settings"){
+ const number=name=>{const v=body.get(name);return v!==null&&v.trim()!==""?Number(v):NaN;};
+ updateCommercialSettings(store,{kind:body.get("kind"),id:body.get("id"),priceKzt:number("priceKzt"),tokens:number("tokens"),usd:number("usd"),version:number("version"),reason:body.get("reason")},{paymentsEnabled:enabled,defaultBudget});
+ res.writeHead(303,{location:"/?result=settingsSaved"});return res.end();
+ }
         if(url.pathname==="/access"){
           const result=changeAccountAccess(store,{userId:body.get("userId"),action:body.get("action"),reason:body.get("reason"),requestId:body.get("requestId")},isBusy);
           res.writeHead(303,{location:"/?result="+(result.changed?"accessChanged":"accessUnchanged")});return res.end();
@@ -174,7 +190,7 @@ export function createAdminDashboard(store,{secret,enabled=false,isBusy=()=>fals
     }
     if(req.method!=="GET"){res.writeHead(405,{"allow":"GET"});return res.end("Method not allowed");}
     if(url.pathname!=="/"){res.writeHead(404);return res.end("Not found");}
-    try{const html=renderAdmin(store.db,{query:url.searchParams.get("q")||"",page:Number(url.searchParams.get("page")||1),enabled,csrf,notice:({granted:"Бонус начислен.",duplicate:"Начисление уже выполнено.",accessChanged:"Доступ изменён. Старые сеансы завершены.",accessUnchanged:"Доступ уже имеет выбранное состояние."})[url.searchParams.get("result")]||""});
+    try{const html=renderAdmin(store.db,{query:url.searchParams.get("q")||"",page:Number(url.searchParams.get("page")||1),enabled,csrf,defaultBudget,notice:({settingsSaved:"Настройки сохранены.",granted:"Бонус начислен.",duplicate:"Начисление уже выполнено.",accessChanged:"Доступ изменён. Старые сеансы завершены.",accessUnchanged:"Доступ уже имеет выбранное состояние."})[url.searchParams.get("result")]||""});
       res.writeHead(200,{"content-type":"text/html; charset=utf-8"});res.end(html);
     }catch{res.writeHead(500);res.end("Dashboard unavailable");}
   });

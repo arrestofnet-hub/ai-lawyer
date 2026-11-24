@@ -14,7 +14,7 @@ import {
   REFERRAL_BONUS,TRIAL_CREDITS,aiTokenCost,normalizeReferral,safeSource,
   campaignByCode,createCampaign,registrationCredit,allocateVerifiedRegistration,
   balanceOf,canSpend,spendCredits,adminAuthorized,displayTokens,PUBLIC_TOKEN_MULTIPLIER,
-  GUEST_PUBLIC_TOKENS,GUEST_CONSULT_COST,GUEST_DOCUMENT_COST,PACKAGES,remainingGuestTokens
+  GUEST_PUBLIC_TOKENS,GUEST_CONSULT_COST,GUEST_DOCUMENT_COST,remainingGuestTokens
 } from "./referrals.mjs";
 import {
   googleEnabled, mailEnabled, googleStart, googleIdentity, verifyGoogleCookie, clearGoogleCookie,
@@ -30,6 +30,7 @@ import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 import {listOrders} from "./payments.mjs";
 import {createAdminDashboard} from "./admin-dashboard.mjs";
 import {startCheckout} from "./checkout.mjs";
+import {currentPackages,freeBudget} from "./commercial-settings.mjs";
 import {modelResponseSettings} from "./model-response-budget.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
 import {blankDossier,validateDossier,dossierView,dossierPromptContext} from "./legal/dossier.mjs";
@@ -189,7 +190,7 @@ function guestQuota(req, at=Date.now()) {
   return { identity, remaining, restriction };
 }
 function enforceFreeApiBudget() {
-  if(sumEstimatedProviderCost(store.db.providerUsage,true)>=FREE_API_BUDGET_USD)
+  if(sumEstimatedProviderCost(store.db.providerUsage,true)>=freeBudget(store.db,FREE_API_BUDGET_USD))
     fail(503,"Бесплатный бюджет AI временно исчерпан. Токены не списаны. Обратитесь в поддержку.");
 }
 function recordProviderUsage(result,user,free) {
@@ -578,7 +579,7 @@ async function api(req,res,url) {
     return json(res,200,{
       authenticated:!!user,user:user?safeUser(user):null,
       configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(user?.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT),
-      packages:PACKAGES,paymentsEnabled,paymentProviders:paymentsEnabled?paymentProviders:[],
+      packages:currentPackages(store.db),paymentsEnabled,paymentProviders:paymentsEnabled?paymentProviders:[],
       signupMode:mailEnabled()?"email":process.env.SIGNUP_INVITE_CODE?"invite":"disabled",
       emailVerificationEnabled:mailEnabled(),referralBonus:displayTokens(REFERRAL_BONUS),
       prices:profile(user).prices,
@@ -761,12 +762,13 @@ async function api(req,res,url) {
     if(!paymentsEnabled)fail(503,"Оплата пока подключается");
     rateLimit(req,"checkout-"+u.id,12,600000);
     const b=await bodyJson(req,4096);
-    if(!paymentProviders.includes(b.provider)||!PACKAGES.some(x=>x.id===b.packageId)||
+    if(!paymentProviders.includes(b.provider)||!currentPackages(store.db).some(x=>x.id===b.packageId)||
+       !Number.isSafeInteger(b.expectedPriceKzt)||!Number.isSafeInteger(b.expectedTokens)||
        typeof b.requestId!=="string"||!/^([a-f0-9-]{36})$/.test(b.requestId))
       fail(400,"Некорректный заказ");
     if(balanceOf(u)===null||!["trial","paid"].includes(u.accountType))fail(403,"Пополнение недоступно для этого аккаунта");
     try{
-      const result=await startCheckout(store,paymentAdapters,{userId:u.id,packageId:b.packageId,provider:b.provider,requestId:b.requestId});
+      const result=await startCheckout(store,paymentAdapters,{userId:u.id,packageId:b.packageId,provider:b.provider,requestId:b.requestId,expectedPriceKzt:b.expectedPriceKzt,expectedTokens:b.expectedTokens});
       return json(res,200,result);
     }catch(e){
       console.error("checkout_failed",e.name);
@@ -1100,7 +1102,7 @@ server.listen(PORT,process.env.HOST||"127.0.0.1",()=>console.log("AI Lawyer web 
 // Isolated localhost-only administrative listener. Never reverse proxy it publicly.
 if(process.env.ADMIN_DASHBOARD_ENABLED==="1"){
   try{
-    const dashboard=createAdminDashboard(store,{secret:process.env.ADMIN_DASHBOARD_KEY,enabled:paymentsEnabled,isBusy:id=>activeModelRequests.has(id)});
+    const dashboard=createAdminDashboard(store,{secret:process.env.ADMIN_DASHBOARD_KEY,enabled:paymentsEnabled,defaultBudget:FREE_API_BUDGET_USD,isBusy:id=>activeModelRequests.has(id)});
     dashboard.on("error",e=>console.error("admin_dashboard_error",e.code||e.name));
     dashboard.listen(8792,"127.0.0.1",()=>console.log("Admin dashboard listening on localhost:8792"));
   }catch(e){console.error("admin_dashboard_disabled",e.name);}

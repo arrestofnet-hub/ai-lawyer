@@ -1,7 +1,8 @@
 // Provider-neutral order ledger. No public settlement route: the future provider
 // adapter must independently authenticate and verify a final captured payment.
 import {randomUUID} from "node:crypto";
-import {PACKAGES,PUBLIC_TOKEN_MULTIPLIER,balanceOf} from "./referrals.mjs";
+import {PUBLIC_TOKEN_MULTIPLIER,balanceOf} from "./referrals.mjs";
+import {currentPackages} from "./commercial-settings.mjs";
 
 const PROVIDERS=new Set(["bcc","freedom","kaspi","halyk"]);
 function reject(message){throw new Error(message);}
@@ -15,17 +16,19 @@ export function publicOrder(o){
 export function listOrders(store,userId){
   return orders(store).filter(o=>o.userId===userId).slice().reverse().slice(0,100).map(publicOrder);
 }
-export function createOrder(store,{userId,packageId,provider,requestId}){
+export function createOrder(store,{userId,packageId,provider,requestId,expectedPriceKzt,expectedTokens}){
   const user=store.db.users.find(u=>u.id===userId);
-  if(!user||balanceOf(user)===null||!["trial","paid"].includes(user.accountType))reject("Invalid account");
+  if(!user||user.blockedAt||balanceOf(user)===null||!["trial","paid"].includes(user.accountType))reject("Invalid account");
   if(!PROVIDERS.has(provider)||!validRef(requestId))reject("Invalid provider or request ID");
   const existing=orders(store).find(o=>o.userId===userId&&o.requestId===requestId);
   if(existing){
     if(existing.packageId!==packageId||existing.provider!==provider)reject("Request ID conflict");
+    if((expectedPriceKzt!==undefined&&expectedPriceKzt!==existing.amountMinor/100)||(expectedTokens!==undefined&&expectedTokens!==existing.tokens))reject("Order quote mismatch");
     return publicOrder(existing);
   }
-  const pkg=PACKAGES.find(p=>p.id===packageId);
+  const pkg=currentPackages(store.db).find(p=>p.id===packageId);
   if(!pkg||!Number.isSafeInteger(pkg.priceKzt*100)||!Number.isSafeInteger(pkg.tokens/PUBLIC_TOKEN_MULTIPLIER))reject("Invalid package");
+  if((expectedPriceKzt!==undefined&&expectedPriceKzt!==pkg.priceKzt)||(expectedTokens!==undefined&&expectedTokens!==pkg.tokens))reject("Package quote changed");
   const o={id:randomUUID(),userId,requestId,packageId:pkg.id,packageName:pkg.name,
     provider,amountMinor:pkg.priceKzt*100,currency:"KZT",tokens:pkg.tokens,
     credits:pkg.tokens/PUBLIC_TOKEN_MULTIPLIER,status:"pending",createdAt:new Date().toISOString()};
