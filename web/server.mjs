@@ -135,6 +135,7 @@ function sessionFor(req) {
   const s = store.db.sessions.find(x => x.hash === hash && x.expiresAt > Date.now());
   if (!s) return null;
   const user=store.db.users.find(x => x.id === s.userId) || null;
+  if(user?.blockedAt)return null;
   if(user)grandfatherTrialBalance(user);
   return user;
 }
@@ -144,6 +145,7 @@ function sessionCookie(token, maxAge) {
   return `al_session=${token}; HttpOnly; SameSite=Lax; Path=/chat/${Number.isInteger(maxAge)?"; Max-Age="+maxAge:""}${secure}`;
 }
 function newSession(user,res,remember=false) {
+  if(user.blockedAt)fail(403,"Доступ к аккаунту ограничен. Обратитесь в поддержку.");
   const days=remember?30:1;
   const token=crypto.randomBytes(32).toString("hex");
   store.db.sessions.push({hash:tokenHash(token),userId:user.id,remember:!!remember,expiresAt:Date.now()+days*86400000});
@@ -742,6 +744,7 @@ async function api(req,res,url) {
     const b=await bodyJson(req), email=validateEmail(b.email);
     const user=store.db.users.find(u=>u.email===email);
     if (!user || !checkPassword(String(b.password||""),user.pass)) fail(401,"Неверная почта или пароль");
+    if(user.blockedAt)fail(403,"Доступ к аккаунту ограничен. Обратитесь в поддержку.");
     ensureGuestIdle(req);
     const guestCaseId=saveGuestConversation(req,user);
     newSession(user,res,b.remember===true);
@@ -1016,13 +1019,14 @@ const server=http.createServer(async(req,res)=>{
             x.hash===flow.linkSessionHash&&x.expiresAt>Date.now());
           if(!validSession)throw new GoogleOAuthError("GOOGLE_STATE_INVALID");
           user=store.db.users.find(x=>x.id===flow.linkUserId);
-          if(!user||user.email!==identity.email||user.googleSub&&user.googleSub!==identity.sub)
+          if(!user||user.blockedAt||user.email!==identity.email||user.googleSub&&user.googleSub!==identity.sub)
             throw new GoogleOAuthError("GOOGLE_LINK_MISMATCH");
           if(store.db.users.some(x=>x.googleSub===identity.sub&&x.id!==user.id))
             throw new GoogleOAuthError("GOOGLE_LINK_MISMATCH");
           user.googleSub=identity.sub;user.emailVerified=true;store.save();
         }else{
           user=store.db.users.find(x=>x.googleSub===identity.sub);
+          if(user?.blockedAt)fail(403,"Доступ к аккаунту ограничен. Обратитесь в поддержку.");
           if(!user){
             if(store.db.users.some(x=>x.email===identity.email)) {
               res.writeHead(303,{"location":ORIGIN+"/chat/?auth_error=google_link_required",
@@ -1096,7 +1100,7 @@ server.listen(PORT,process.env.HOST||"127.0.0.1",()=>console.log("AI Lawyer web 
 // Isolated localhost-only administrative listener. Never reverse proxy it publicly.
 if(process.env.ADMIN_DASHBOARD_ENABLED==="1"){
   try{
-    const dashboard=createAdminDashboard(store,{secret:process.env.ADMIN_DASHBOARD_KEY,enabled:paymentsEnabled});
+    const dashboard=createAdminDashboard(store,{secret:process.env.ADMIN_DASHBOARD_KEY,enabled:paymentsEnabled,isBusy:id=>activeModelRequests.has(id)});
     dashboard.on("error",e=>console.error("admin_dashboard_error",e.code||e.name));
     dashboard.listen(8792,"127.0.0.1",()=>console.log("Admin dashboard listening on localhost:8792"));
   }catch(e){console.error("admin_dashboard_disabled",e.name);}
