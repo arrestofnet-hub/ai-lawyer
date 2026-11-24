@@ -28,6 +28,7 @@ import {
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 import {listOrders} from "./payments.mjs";
+import {startCheckout} from "./checkout.mjs";
 import {modelResponseSettings} from "./model-response-budget.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
 import {blankDossier,validateDossier,dossierView,dossierPromptContext} from "./legal/dossier.mjs";
@@ -46,6 +47,10 @@ const PORT = Number(process.env.PORT || 8791);
 const ORIGIN = String(process.env.PUBLIC_ORIGIN || "http://localhost:" + PORT).replace(/\/$/, "");
 const KEY = dataKey(process.env.DATA_KEY);
 const store = new Store(process.env.DATA_DIR || path.join(dirname, "private-data"), KEY);
+// Live adapters must be added only after provider onboarding and fiscal integration.
+const paymentAdapters=Object.freeze(Object.create(null));
+const paymentProviders=Object.freeze(Object.keys(paymentAdapters));
+const paymentsEnabled=process.env.PAYMENTS_ENABLED==="1"&&paymentProviders.length>0;
 const strategy = fs.readFileSync(path.join(dirname, "strategy", "LEGAL_ENGINE_V1.md"), "utf8");
 const practiceMethods=fs.readFileSync(path.join(dirname,"strategy","LEGAL_PRACTICE_METHODS_V3.md"),"utf8")+
   "\n\n"+fs.readFileSync(path.join(dirname,"strategy","LEGAL_REASONING_METHODS_V4.md"),"utf8");
@@ -570,7 +575,7 @@ async function api(req,res,url) {
     return json(res,200,{
       authenticated:!!user,user:user?safeUser(user):null,
       configured:!!process.env.OPENAI_API_KEY,dailyLimit:displayTokens(user?.accountType==="paid"?Math.max(DAILY_LIMIT,5000):DAILY_LIMIT),
-      packages:PACKAGES,paymentsEnabled:false,
+      packages:PACKAGES,paymentsEnabled,paymentProviders:paymentsEnabled?paymentProviders:[],
       signupMode:mailEnabled()?"email":process.env.SIGNUP_INVITE_CODE?"invite":"disabled",
       emailVerificationEnabled:mailEnabled(),referralBonus:displayTokens(REFERRAL_BONUS),
       prices:profile(user).prices,
@@ -746,6 +751,23 @@ async function api(req,res,url) {
     if (token) store.db.sessions=store.db.sessions.filter(s=>s.hash!==tokenHash(token));
     store.save(); res.setHeader("set-cookie",sessionCookie("",0));
     return json(res,200,{ok:true});
+  }
+  if (req.method === "POST" && p === "/chat/api/payments/checkout") {
+    const u=requireUser(req);
+    if(!paymentsEnabled)fail(503,"Оплата пока подключается");
+    rateLimit(req,"checkout-"+u.id,12,600000);
+    const b=await bodyJson(req,4096);
+    if(!paymentProviders.includes(b.provider)||!PACKAGES.some(x=>x.id===b.packageId)||
+       typeof b.requestId!=="string"||!/^([a-f0-9-]{36})$/.test(b.requestId))
+      fail(400,"Некорректный заказ");
+    if(balanceOf(u)===null||!["trial","paid"].includes(u.accountType))fail(403,"Пополнение недоступно для этого аккаунта");
+    try{
+      const result=await startCheckout(store,paymentAdapters,{userId:u.id,packageId:b.packageId,provider:b.provider,requestId:b.requestId});
+      return json(res,200,result);
+    }catch(e){
+      console.error("checkout_failed",e.name);
+      fail(502,"Не удалось открыть оплату. Повторите попытку с тем же заказом.");
+    }
   }
   if (req.method === "GET" && p === "/chat/api/payments/orders") {
     const u=requireUser(req);

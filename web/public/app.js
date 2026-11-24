@@ -80,7 +80,7 @@ async function downloadExport(caseId,messageId,format,button) {
 const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(), guestDocIds:new Set(),guestUploadBusy:false,
   busy:false, registered:false, awaitingCode:false, signupMode:"invite",
   legacyInviteVisible:false, googleEnabled:false, googleSignupEnabled:false, dailyLimit:0,balance:null,
-  pendingRequest:null,packages:[],
+  pendingRequest:null,packages:[],paymentProviders:[],paymentsEnabled:false,
   prices:{consult:1500,audit:8000,strategy:12000,draft:5000,review:12000,compact:3000}
 };
 const incomingParams=new URLSearchParams(location.search);
@@ -129,6 +129,29 @@ function renderPackages() {
     const details=document.createElement("p");details.textContent=formatCount(pkg.tokens)+" токенов AI Lawyer";
     const buy=document.createElement("button");buy.type="button";buy.disabled=true;
     buy.className="secondary";buy.textContent="Оплата подключается";
+    if(state.paymentsEnabled&&state.user&&state.paymentProviders.length){
+      buy.disabled=false;buy.textContent="Купить";
+      const methods=document.createElement("select");
+      methods.setAttribute("aria-label","Способ оплаты");
+      for(const provider of state.paymentProviders){
+        const option=document.createElement("option");option.value=provider;
+        option.textContent=({bcc:"Банк ЦентрКредит",freedom:"Freedom Pay",kaspi:"Kaspi",halyk:"Halyk"})[provider]||provider;
+        methods.append(option);
+      }
+      article.append(methods);
+      const requests=new Map();
+      buy.addEventListener("click",async()=>{
+        const provider=methods.value;
+        if(!requests.has(provider))requests.set(provider,crypto.randomUUID());
+        buy.disabled=true;methods.disabled=true;
+        try{
+          const result=await post("/payments/checkout",{packageId:pkg.id,provider,requestId:requests.get(provider)});
+          if(result.checkoutUrl)location.assign(result.checkoutUrl);
+          else {requests.delete(provider);void loadPaymentHistory();}
+        }catch(e){$("#planNotice").textContent=e.message;}
+        finally{buy.disabled=false;methods.disabled=false;}
+      });
+    }
     article.append(heading,price,details,buy);root.append(article);
   }
   const compact=$("#guestPricePreview .compact-packages");
@@ -427,6 +450,9 @@ async function boot() {
         : "Вход Google доступен для привязанных аккаунтов. Новые аккаунты пока создаются через email.";
     state.prices=s.prices||state.prices;
     state.packages=Array.isArray(s.packages)?s.packages:[];
+    state.paymentsEnabled=s.paymentsEnabled===true;
+    state.paymentProviders=Array.isArray(s.paymentProviders)?s.paymentProviders:[];
+    state.user=s.authenticated?s.user:null;
     renderPackages();
     state.balance=s.balance??null;
     $("#freePlanDetails").textContent="20 000 гостевых токенов + "+formatCount(s.trialCredits||20000)+
