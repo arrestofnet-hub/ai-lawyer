@@ -145,7 +145,7 @@ function renderPackages() {
         if(!requests.has(provider))requests.set(provider,crypto.randomUUID());
         buy.disabled=true;methods.disabled=true;
         try{
-          const result=await post("/payments/checkout",{packageId:pkg.id,provider,requestId:requests.get(provider)});
+          const result=await post("/payments/checkout",{packageId:pkg.id,provider,requestId:requests.get(provider),expectedPriceKzt:pkg.priceKzt,expectedTokens:pkg.tokens});
           if(result.checkoutUrl)location.assign(result.checkoutUrl);
           else {requests.delete(provider);void loadPaymentHistory();}
         }catch(e){$("#planNotice").textContent=e.message;}
