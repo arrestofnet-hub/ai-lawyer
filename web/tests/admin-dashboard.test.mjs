@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {once} from "node:events";
-import {adminSummary,renderAdmin,createAdminDashboard,adminAuthorizedRequest} from "../admin-dashboard.mjs";
+import {adminSummary,renderAdmin,createAdminDashboard,adminAuthorizedRequest,grantBonus} from "../admin-dashboard.mjs";
 const key="a".repeat(64),auth="Basic "+Buffer.from("admin:"+key).toString("base64");
 const db={users:[{id:"u",email:"<script>alert(1)</script>",credits:200,accountType:"trial",pass:"SECRET_HASH"},{id:"v",email:"person@example.kz",credits:100,accountType:"paid"}],
   paymentOrders:[{id:"1",amountMinor:99000,status:"paid",provider:"bcc",transactionId:"PRIVATE_TX"},{id:"2",amountMinor:199000,status:"pending",provider:"bcc"}],
@@ -27,7 +27,7 @@ test("admin requires separate credential and rejects proxies and remote hosts",(
   assert.equal(adminAuthorizedRequest({...req,socket:{remoteAddress:"8.8.8.8"}},key),false);
   assert.throws(()=>createAdminDashboard({db},{secret:"weak"}));
 });
-test("dashboard HTTP endpoints require authentication and cannot write",async()=>{
+test("dashboard HTTP endpoints require authentication and reject unsupported writes",async()=>{
   const server=createAdminDashboard({db},{secret:key});
   server.listen(0,"127.0.0.1");await once(server,"listening");
   const base="http://127.0.0.1:"+server.address().port;
@@ -39,5 +39,39 @@ test("dashboard HTTP endpoints require authentication and cannot write",async()=
     assert.ok((await response.text()).includes("История")===false);
     assert.equal((await fetch(base,{...options,method:"POST"})).status,405);
     assert.equal((await fetch(base+"/anything",options)).status,404);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test("bonus grants are idempotent, audited and do not mark accounts paid",()=>{
+  const s={db:{users:[{id:"u",credits:200,accountType:"trial"}]},save(){}};
+  const input={userId:"u",tokens:5000,reason:"Бонус",requestId:"00000000-0000-4000-8000-000000000001"};
+  assert.equal(grantBonus(s,input).balance,25000);
+  assert.equal(grantBonus(s,input).granted,false);
+  assert.equal(s.db.adminBonusGrants.length,1);
+  assert.equal(s.db.users[0].accountType,"trial");
+  assert.equal(s.db.paymentOrders,undefined);
+  assert.throws(()=>grantBonus(s,{...input,tokens:100}));
+  for(const tokens of [-100,1,200100,NaN])assert.throws(()=>grantBonus(s,{...input,tokens}));
+  s.save=()=>{throw Error("disk failure");};
+  assert.throws(()=>grantBonus(s,{...input,requestId:"00000000-0000-4000-8000-000000000002"}));
+  assert.equal(s.db.users[0].credits,250);
+  assert.equal(s.db.adminBonusGrants.length,1);
+});
+test("bonus endpoint requires origin, CSRF and authentication",async()=>{
+  const s={db:{users:[{id:"u",credits:200,accountType:"trial",email:"test@example.kz"}]},save(){}};
+  const server=createAdminDashboard(s,{secret:key});
+  server.listen(0,"127.0.0.1");await once(server,"listening");
+  const base="http://127.0.0.1:"+server.address().port;
+  try{
+    const html=await (await fetch(base,{headers:{authorization:auth}})).text();
+    const csrf=html.match(/name="csrf" value="([a-f0-9]{64})"/)[1];
+    const body=new URLSearchParams({csrf,userId:"u",tokens:"5000",reason:"test grant",requestId:"00000000-0000-4000-8000-000000000001"});
+    const post=(headers,b=body)=>fetch(base+"/bonus",{method:"POST",headers,body:b,redirect:"manual"});
+    assert.equal((await post({origin:base})).status,401);
+    assert.equal((await post({authorization:auth,origin:"https://evil.example"})).status,403);
+    assert.equal((await post({authorization:auth,origin:base},new URLSearchParams({...Object.fromEntries(body),csrf:"0".repeat(64)}))).status,403);
+    assert.equal((await post({authorization:auth,origin:base})).status,303);
+    assert.equal((await post({authorization:auth,origin:base})).status,303);
+    assert.equal(s.db.users[0].credits,250);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
