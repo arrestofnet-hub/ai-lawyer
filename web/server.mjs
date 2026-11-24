@@ -28,6 +28,7 @@ import {
 } from "./core.mjs";
 import {estimateProviderCost,sumEstimatedProviderCost} from "./pricing.mjs";
 import {listOrders} from "./payments.mjs";
+import {createAdminDashboard} from "./admin-dashboard.mjs";
 import {startCheckout} from "./checkout.mjs";
 import {modelResponseSettings} from "./model-response-budget.mjs";
 import {selectLegalPlaybooks} from "./strategy/playbook-selector.mjs";
@@ -1091,3 +1092,12 @@ const server=http.createServer(async(req,res)=>{
   }
 });
 server.listen(PORT,process.env.HOST||"127.0.0.1",()=>console.log("AI Lawyer web listening on",server.address().port));
+
+// Isolated localhost-only administrative listener. Never reverse proxy it publicly.
+if(process.env.ADMIN_DASHBOARD_ENABLED==="1"){
+  try{
+    const dashboard=createAdminDashboard(store,{secret:process.env.ADMIN_DASHBOARD_KEY,enabled:paymentsEnabled});
+    dashboard.on("error",e=>console.error("admin_dashboard_error",e.code||e.name));
+    dashboard.listen(8792,"127.0.0.1",()=>console.log("Admin dashboard listening on localhost:8792"));
+  }catch(e){console.error("admin_dashboard_disabled",e.name);}
+}
