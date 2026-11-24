@@ -80,7 +80,7 @@ async function downloadExport(caseId,messageId,format,button) {
 const state = { user:null, guest:null, cases:[], current:null, mode:"consult", docIds:new Set(), guestDocIds:new Set(),guestUploadBusy:false,
   busy:false, registered:false, awaitingCode:false, signupMode:"invite",
   legacyInviteVisible:false, googleEnabled:false, googleSignupEnabled:false, dailyLimit:0,balance:null,
-  pendingRequest:null,packages:[],
+  pendingRequest:null,packages:[],paymentProviders:[],paymentsEnabled:false,
   prices:{consult:1500,audit:8000,strategy:12000,draft:5000,review:12000,compact:3000}
 };
 const incomingParams=new URLSearchParams(location.search);
@@ -129,6 +129,29 @@ function renderPackages() {
     const details=document.createElement("p");details.textContent=formatCount(pkg.tokens)+" токенов AI Lawyer";
     const buy=document.createElement("button");buy.type="button";buy.disabled=true;
     buy.className="secondary";buy.textContent="Оплата подключается";
+    if(state.paymentsEnabled&&state.user&&state.paymentProviders.length){
+      buy.disabled=false;buy.textContent="Купить";
+      const methods=document.createElement("select");
+      methods.setAttribute("aria-label","Способ оплаты");
+      for(const provider of state.paymentProviders){
+        const option=document.createElement("option");option.value=provider;
+        option.textContent=({bcc:"Банк ЦентрКредит",freedom:"Freedom Pay",kaspi:"Kaspi",halyk:"Halyk"})[provider]||provider;
+        methods.append(option);
+      }
+      article.append(methods);
+      const requests=new Map();
+      buy.addEventListener("click",async()=>{
+        const provider=methods.value;
+        if(!requests.has(provider))requests.set(provider,crypto.randomUUID());
+        buy.disabled=true;methods.disabled=true;
+        try{
+          const result=await post("/payments/checkout",{packageId:pkg.id,provider,requestId:requests.get(provider)});
+          if(result.checkoutUrl)location.assign(result.checkoutUrl);
+          else {requests.delete(provider);void loadPaymentHistory();}
+        }catch(e){$("#planNotice").textContent=e.message;}
+        finally{buy.disabled=false;methods.disabled=false;}
+      });
+    }
     article.append(heading,price,details,buy);root.append(article);
   }
   const compact=$("#guestPricePreview .compact-packages");
@@ -139,7 +162,52 @@ function renderPackages() {
     compact.append(span);
   }
 }
-function showPlans() { if(!$("#plans").open)$("#plans").showModal(); }
+let paymentHistoryRequest=0;
+function resetPaymentHistory(){
+  paymentHistoryRequest++;
+  $("#paymentHistory").hidden=true;
+  $("#paymentHistoryList").replaceChildren();
+  $("#paymentHistoryStatus").textContent="";
+  $("#refreshPaymentHistory").disabled=false;
+}
+async function loadPaymentHistory(){
+  resetPaymentHistory();
+  const userId=state.user?.id;
+  if(!userId)return;
+  const seq=paymentHistoryRequest;
+  const current=()=>seq===paymentHistoryRequest&&state.user?.id===userId;
+  const status=$("#paymentHistoryStatus"),list=$("#paymentHistoryList");
+  $("#paymentHistory").hidden=false;
+  $("#refreshPaymentHistory").disabled=true;
+  status.textContent="Загрузка истории...";
+  try{
+    const data=await request("/payments/orders");
+    if(!current())return;
+    const orders=Array.isArray(data.orders)?data.orders:[];
+    status.textContent=orders.length?"Последние покупки":"Покупок пока нет.";
+    for(const order of orders){
+      const item=document.createElement("article");
+      item.className="plan-card";
+      const heading=document.createElement("h4");heading.textContent=order.packageName;
+      const amount=document.createElement("p");amount.textContent=formatCount(order.priceKzt)+" ₸ · "+formatCount(order.tokens)+" токенов";
+      const detail=document.createElement("p");
+      const date=new Date(order.createdAt);
+      const dateText=Number.isNaN(date.getTime())?"":date.toLocaleString("ru-RU");
+      const label=({pending:"Ожидает оплаты",paid:"Оплачено",failed:"Не оплачено",cancelled:"Отменено",refunded:"Возвращено"})[order.status]||"Статус уточняется";
+      detail.textContent=label+(dateText?" · "+dateText:"");
+      const id=document.createElement("p");id.className="muted";id.textContent="Заказ: "+order.id;
+      item.append(heading,amount,detail,id);list.append(item);
+    }
+  }catch(e){
+    if(current())status.textContent="Не удалось загрузить историю. Попробуйте обновить.";
+  }finally{
+    if(current())$("#refreshPaymentHistory").disabled=false;
+  }
+}
+function showPlans() {
+  if(!$("#plans").open)$("#plans").showModal();
+  void loadPaymentHistory();
+}
 function setAppVisible(visible) {
   $("#app").style.display=visible?"grid":"none";
 }
@@ -361,7 +429,7 @@ function oauthMessage() {
   else if(error==="google_login_failed")
     showError("Не удалось войти через Google. Попробуйте позже либо используйте email.","#authError");
   else if(notice==="google_linked")showError("Аккаунт Google успешно подключён.","#notice");
-  else if(notice==="google_registered"&&state.user)$("#plans").showModal();
+  else if(notice==="google_registered"&&state.user)showPlans();
   if(error||notice){
     p.delete("auth_error");p.delete("auth_notice");
     const query=p.toString();
@@ -369,6 +437,7 @@ function oauthMessage() {
   }
 }
 async function boot() {
+  resetPaymentHistory();
   try {
     const s=await request("/session");
     state.signupMode=s.signupMode||"invite";
@@ -381,6 +450,9 @@ async function boot() {
         : "Вход Google доступен для привязанных аккаунтов. Новые аккаунты пока создаются через email.";
     state.prices=s.prices||state.prices;
     state.packages=Array.isArray(s.packages)?s.packages:[];
+    state.paymentsEnabled=s.paymentsEnabled===true;
+    state.paymentProviders=Array.isArray(s.paymentProviders)?s.paymentProviders:[];
+    state.user=s.authenticated?s.user:null;
     renderPackages();
     state.balance=s.balance??null;
     $("#freePlanDetails").textContent="20 000 гостевых токенов + "+formatCount(s.trialCredits||20000)+
@@ -772,6 +844,7 @@ $("#lawSearchForm").addEventListener("submit",ev=>{
     $("#lawSourcesStatus").textContent=e.message);
 });
 $("#openPlans").addEventListener("click",showPlans);
+$("#refreshPaymentHistory").addEventListener("click",loadPaymentHistory);
 $("#closePlans").addEventListener("click",()=>$("#plans").close());
 $("#continueFree").addEventListener("click",()=>$("#plans").close());
 $("#forgotPassword").addEventListener("click",()=>showPasswordRecovery(true));
@@ -903,7 +976,7 @@ $("#authForm").addEventListener("submit",async ev=>{
   finally {submit.disabled=false;}
 });
 $("#logout").addEventListener("click",async()=>{
-  try{await post("/auth/logout",{});state.user=null;state.current=null;state.registered=false;await boot();}
+  try{await post("/auth/logout",{});state.user=null;resetPaymentHistory();state.current=null;state.registered=false;await boot();}
   catch(e){showError(e.message);}
 });
 $("#createCase").addEventListener("click",async()=>{

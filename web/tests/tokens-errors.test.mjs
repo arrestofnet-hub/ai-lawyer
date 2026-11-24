@@ -28,7 +28,7 @@ test("failed AI calls do not debit public tokens, and retries are idempotent",as
   const env={PORT:"0",HOST:"127.0.0.1",DATA_DIR:temp,DATA_KEY:key,
     OPENAI_API_KEY:"test-provider",ENABLE_LAW_SEARCH:"0",
     // Simulate a legacy VPS variable that must no longer force Astra billing.
-    OPENAI_MODEL:"gpt-6-astra",SIGNUP_INVITE_CODE:"invite-test"};
+    OPENAI_MODEL:"gpt-6-astra",SIGNUP_INVITE_CODE:"invite-test",PAYMENTS_ENABLED:"1"};
   let child,base;
   async function start(){
     child=spawn(process.execPath,["--import",provider,server],{env,stdio:["ignore","pipe","inherit"]});
@@ -82,6 +82,12 @@ test("failed AI calls do not debit public tokens, and retries are idempotent",as
     persisted.save();
     await start();
     const profile=await (await call("/session",cookie)).json();
+    assert.equal(profile.paymentsEnabled,false);
+    assert.deepEqual(profile.paymentProviders,[]);
+    assert.equal((await call("/payments/orders")).status,401);
+    assert.equal((await call("/payments/checkout",null,{packageId:"try",provider:"bcc",requestId:crypto.randomUUID()})).status,401);
+    assert.equal((await call("/payments/checkout",cookie,{packageId:"try",provider:"bcc",requestId:crypto.randomUUID()})).status,503);
+    assert.deepEqual(await (await call("/payments/orders",cookie)).json(),{orders:[]});
     assert.equal(profile.balance,4500);
     assert.equal(profile.prices.consult,1500);
     assert.equal(profile.prices.strategy,12000);
