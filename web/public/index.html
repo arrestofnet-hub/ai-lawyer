@@ -248,6 +248,12 @@ main .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 </div>
 <p id="freePlanDetails" class="muted"></p>
 <p id="planNotice">Это предварительные цены. Оплата пока не подключена, никаких списаний с банковской карты не производится. Внутренние токены не являются API-токенами OpenAI.</p>
+<section id="paymentHistory" hidden aria-labelledby="paymentHistoryTitle">
+<h3 id="paymentHistoryTitle">История покупок</h3>
+<p id="paymentHistoryStatus" role="status" class="muted"></p>
+<div id="paymentHistoryList"></div>
+<button class="secondary" id="refreshPaymentHistory" type="button">Обновить историю</button>
+</section>
 <button class="secondary" id="continueFree" type="button">Закрыть</button>
 </dialog>
 <script type="module" src="/chat/app.js"></script>
