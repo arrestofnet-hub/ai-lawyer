@@ -9,6 +9,7 @@ DynamicUser=yes
 StateDirectory=ai-lawyer-support
 StateDirectoryMode=0700
 LoadCredential=mail.json:/etc/ai-lawyer-support.json
+LoadCredential=openai.key:/etc/ai-lawyer-support-api.key
 ExecStart=/usr/bin/python3 /opt/ai-lawyer-support/support_worker.py
 TimeoutStartSec=90
 NoNewPrivileges=yes

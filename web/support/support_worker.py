@@ -13,7 +13,8 @@ from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import parseaddr
 from pathlib import Path
-from support_faq import plain_text, reply_for
+from support_faq import plain_text, reply_for, classify
+from support_ai import generate_test_answer
 
 SUBJECT = "AI Lawyer AUTO TEST"
 ANSWER = ("Здравствуйте! Служба поддержки AI Lawyer Kazakhstan работает.\n\n"
@@ -105,6 +106,13 @@ def run():
                                 if status == "OK" and payload is not None and len(payload) <= 32768:
                                     text = plain_text(BytesParser(policy=policy.default).parsebytes(payload))
                             category, answer = reply_for(text)
+                            source = 'FAQ'
+                            if c.get('ai_test') is True and category != 'manual':
+                                _, lang = classify(text)
+                                generated = generate_test_answer(db, category, lang, Path(os.environ['CREDENTIALS_DIRECTORY']) / 'openai.key')
+                                if generated:
+                                    answer = generated + '\n\nAI Lawyer Kazakhstan'
+                                    source = 'AI'
                             msg = EmailMessage()
                             msg["From"] = c["email"]
                             msg["To"] = sender  # never use untrusted Reply-To
@@ -112,13 +120,13 @@ def run():
                             msg["Auto-Submitted"] = "auto-replied"
                             if re.fullmatch(r"<[^<>\s]{1,240}>", mid):
                                 msg["In-Reply-To"] = mid
-                            msg.set_content(answer + "\n\n[TEST: " + category + "]")
+                            msg.set_content(answer + "\n\n[TEST: " + category + " / " + source + "]")
                             with smtplib.SMTP_SSL(c["host"], c["smtp_port"], context=ctx, timeout=20) as smtp:
                                 smtp.login(c["email"], c["password"])
                                 smtp.send_message(msg, from_addr=c["email"], to_addrs=[sender])
                             with db:
                                 db.execute("UPDATE attempts SET status='sent' WHERE digest=?", (digest,))
-                            print("TEST REPLY: SENT", category)
+                            print("TEST REPLY: SENT", category, source)
                         except Exception:
                             # SMTP delivery can be ambiguous. Do not retry automatically.
                             print("TEST REPLY: CHECK MANUALLY")

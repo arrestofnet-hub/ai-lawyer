@@ -2,6 +2,7 @@ import unittest
 from email.message import EmailMessage
 from support_worker import test_message,init_db,reserve,advance,SUBJECT
 from support_faq import classify,plain_text,reply_for
+from support_ai import reserve_ai,build_payload,generate_test_answer,MONTH_CAP
 
 class SupportTests(unittest.TestCase):
     def test_filter(self):
@@ -50,6 +51,32 @@ class FaqTests(unittest.TestCase):
         category, answer=reply_for(plain_text(m))
         self.assertEqual(category,"registration")
         self.assertIn("https://ailawyer.kz/chat/",answer)
+
+class AiTests(unittest.TestCase):
+    def test_no_customer_text_in_payload(self):
+        data=build_payload("registration","ru")
+        self.assertEqual(data["store"],False)
+        self.assertIn("https://ailawyer.kz/chat/",data["input"])
+        self.assertIsNone(build_payload("manual","ru"))
+        self.assertIsNone(build_payload("registration","unknown"))
+    def test_daily_cap(self):
+        db=init_db(":memory:")
+        for i in range(3): self.assertTrue(reserve_ai(db,"2026-11","2026-11-24"))
+        self.assertFalse(reserve_ai(db,"2026-11","2026-11-24"))
+        self.assertTrue(reserve_ai(db,"2026-11","2026-11-25"))
+        db.close()
+    def test_monthly_cap(self):
+        db=init_db(":memory:")
+        for i in range(MONTH_CAP):
+            self.assertTrue(reserve_ai(db,"2026-11",f"2026-11-{i//3+1:02d}"))
+        self.assertFalse(reserve_ai(db,"2026-11","2026-11-30"))
+        self.assertTrue(reserve_ai(db,"2026-12","2026-12-01"))
+        db.close()
+    def test_missing_credential_fallback(self):
+        db=init_db(":memory:")
+        self.assertIsNone(generate_test_answer(db,"registration","ru","/nonexistent-support-key"))
+        self.assertIsNone(generate_test_answer(db,"manual","ru","/nonexistent-support-key"))
+        db.close()
 
 if __name__=="__main__":
     unittest.main()
